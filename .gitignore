@@ -1,0 +1,17 @@
+# Pre-rendered videos (publish these on GitHub Releases, not in Git)
+*.mp4
+*.m4v
+*.mov
+*.wmv
+
+# Compiled binaries & release staging
+VideoWallpaper.exe
+release-bundle/
+*.zip
+
+# Local OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.user
+*.suo

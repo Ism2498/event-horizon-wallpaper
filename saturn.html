@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Saturn</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
+<style>
+  :root {
+    --void: #07070a;
+    --panel: #111015;
+    --dust: #3a3437;
+    --ink: #f3e9df;
+    --muted: #93868a;
+    --flare: #d9a85a;
+    --font-display: "Silkscreen", "JetBrains Mono", ui-monospace, monospace;
+    --font-ui: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--void); color: var(--ink); font-family: var(--font-ui);
+    display: grid; grid-template-columns: 1fr 300px;
+  }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+  .stage { display: grid; place-items: center; padding: 24px; min-width: 0; min-height: 0; }
+  #preview { max-width: 100%; max-height: 100%; outline: 1px solid var(--dust); background: var(--void); }
+  aside {
+    background: var(--panel); border-left: 1px solid var(--dust);
+    padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;
+  }
+  h1 { font-family: var(--font-display); font-weight: 400; font-size: 1.1rem; margin: 0; letter-spacing: .05em; }
+  .sub { color: var(--muted); font-size: .75rem; margin: -8px 0 0; line-height: 1.5; }
+  label { display: grid; gap: 6px; font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  select, input[type=range] { width: 100%; }
+  select {
+    font: .8rem var(--font-ui); color: var(--ink); background: var(--void);
+    border: 1px solid var(--dust); padding: 7px 8px;
+  }
+  input[type=range] { accent-color: var(--flare); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    font: 600 .8rem/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase;
+    padding: 12px; cursor: pointer; border: 1px solid var(--flare);
+    background: var(--flare); color: var(--void);
+  }
+  button.ghost { background: transparent; color: var(--ink); border-color: var(--dust); }
+  button:disabled { opacity: .45; cursor: wait; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--flare); outline-offset: 2px; }
+  .bar { height: 8px; border: 1px solid var(--dust); }
+  .bar > div { height: 100%; width: 0; background: var(--flare); }
+  #status { font-size: .75rem; color: var(--muted); line-height: 1.5; min-height: 2.2em; }
+  #download { color: var(--flare); font-size: .8rem; word-break: break-all; }
+  .hint { font-size: .7rem; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--dust); padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="stage"><canvas id="preview"></canvas></div>
+
+<aside>
+  <h1>Saturn</h1>
+  <p class="sub">Saturn turns with its polar hexagon showing. Clumps in the rings orbit at their own speeds, and two moons pass by. The loop is seamless.</p>
+
+  <label for="res">Resolution
+    <select id="res">
+      <option value="1920x1080" selected>1920 × 1080 (your laptop)</option>
+      <option value="2560x1440">2560 × 1440</option>
+      <option value="3840x2160">3840 × 2160 (4K)</option>
+    </select>
+  </label>
+
+  <label for="grid">Pixel size
+    <select id="grid">
+      <option value="6">Fine</option>
+      <option value="9" selected>Medium</option>
+      <option value="12">Chunky</option>
+    </select>
+  </label>
+
+  <div class="row">
+    <label for="loop">Loop
+      <select id="loop">
+        <option value="20">20 s</option>
+        <option value="30" selected>30 s</option>
+        <option value="40">40 s</option>
+      </select>
+    </label>
+    <label for="fps">Frame rate
+      <select id="fps">
+        <option value="30">30 fps</option>
+        <option value="60" selected>60 fps</option>
+      </select>
+    </label>
+  </div>
+
+  <label for="tilt">Ring opening <span id="tiltVal"></span>
+    <input id="tilt" type="range" min="8" max="35" value="20">
+  </label>
+  <label for="roll">Angle <span id="rollVal"></span>
+    <input id="roll" type="range" min="-40" max="20" value="-16">
+  </label>
+  <label for="zoom">Zoom
+    <input id="zoom" type="range" min="60" max="180" value="128">
+  </label>
+  <label for="posx">Planet position
+    <input id="posx" type="range" min="30" max="80" value="54">
+  </label>
+
+  <button id="export" type="button">Export MP4</button>
+  <button id="pause" type="button" class="ghost">Pause preview</button>
+  <div class="bar"><div id="progress"></div></div>
+  <div id="status">Ready.</div>
+  <a id="download" hidden></a>
+
+  <p class="hint">The default export matches your 1920 × 1080 screen. Exported MP4s in Downloads show up in the video wallpaper's tray menu by themselves. Export needs Chrome or Edge.</p>
+</aside>
+
+<script>
+// ---------- Renderer ----------
+const BODY = ['#1a1108', '#33210f', '#553717', '#7d5426', '#a6763a', '#c99a55', '#e5be7c', '#f8e2b0'];
+const HEX = ['#141b25', '#22303f', '#364b5e', '#557087', '#7e98ad', '#a9bfd0', '#cfdde8', '#eef4f8'];
+const RING = ['#2b241b', '#4d4232', '#786a52', '#a39478', '#cbbd9c', '#efe5c8'];
+const DUST = ['#2a2620', '#3b352c', '#4d463a'];
+const STARS = ['#5d5458', '#9a8f94', '#fbf5ef', '#ffe2a8'];
+const STORM = '#fff6e0', MOON = '#f3ead8';
+const TAU = Math.PI * 2;
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const wrap = a => a - TAU * Math.floor((a + Math.PI) / TAU);
+
+function mulberry(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+// Cell size is set in 1080p pixels and scaled, so preview and export look identical
+function makeScene(W, H, opts) {
+  const cell = Math.max(2, Math.round(opts.grid * H / 1080));
+  const cols = Math.ceil(W / cell), rows = Math.ceil(H / cell);
+  const rand = mulberry(1610);
+  const n = cols * rows;
+  const rnd = new Float32Array(n);
+  for (let i = 0; i < n; i++) rnd[i] = rand();
+  return { W, H, cell, cols, rows, rnd, opts, heads: [],
+    col: new Array(n).fill(null), kind: new Uint8Array(n), size: new Float32Array(n), trail: new Float32Array(n) };
+}
+
+const cyc = (radPerSec, T) => Math.max(1, Math.round(radPerSec * T / TAU));
+
+// Ring brightness at ring radius rr (planet radii): C ring, B ring, Cassini Division, A ring, Encke gap, F ring
+function ringDensity(rr) {
+  if (rr < 1.24 || rr > 2.33) return 0;
+  let d;
+  if (rr < 1.53) d = 0.3 + 0.08 * Math.sin(rr * 90);
+  else if (rr < 1.95) d = 0.84 + 0.1 * Math.sin(rr * 61) + 0.06 * Math.sin(rr * 173);
+  else if (rr < 2.03) d = 0.05;
+  else if (rr < 2.27) d = 0.6 + 0.1 * Math.sin(rr * 80);
+  else if (rr < 2.305) d = 0;
+  else d = 0.5;
+  if (rr > 2.2 && rr < 2.216) d *= 0.15;
+  return d * smooth(1.24, 1.3, rr);
+}
+
+// Moons on (almost) ring-plane orbits: radius in planet radii, orbits per loop, phase
+const MOONS = [
+  { a: 3.0, k: 2, off: 0.6 },
+  { a: 4.4, k: 1, off: 3.5 },
+];
+
+function step(sc, t, dt) {
+  const { cols, rows, rnd, col, kind, size, trail, opts } = sc;
+  const T = opts.loop, th = TAU * (((t % T) + T) % T) / T;
+  const si = Math.sin(opts.tilt * Math.PI / 180), ci = Math.cos(opts.tilt * Math.PI / 180);
+  const rc = Math.cos(opts.roll * Math.PI / 180), rs = Math.sin(opts.roll * Math.PI / 180);
+  const R = rows * 0.2 * opts.zoom;
+  const cx = cols * opts.posx, cy = rows * 0.5;
+  // Frame after the roll: rings span x; the ring plane is spanned by (1,0,0) and (0,si,ci); the pole is (0,-ci,si)
+  let lx = -0.6, ly = -0.35, lz = 0.7;
+  const ll = Math.hypot(lx, ly, lz); lx /= ll; ly /= ll; lz /= ll;
+  const lN = -ci * ly + si * lz;
+  const kSpin = cyc(0.25, T), kStar = cyc(1.5, T);
+  const tdecay = Math.pow(0.955, dt * 60);
+
+  const kepler = new Map();
+  const ringSpin = rr => {
+    const key = Math.round(rr * 20);
+    let v = kepler.get(key);
+    if (v === undefined) { v = cyc(1.1 * Math.pow(key / 30, -1.5), T); kepler.set(key, v); }
+    return v;
+  };
+
+  for (let py = 0; py < rows; py++) {
+    const Y = (py + 0.5 - cy) / R;
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px, n = rnd[i];
+      const X = (px + 0.5 - cx) / R;
+      const x = X * rc + Y * rs, y = -X * rs + Y * rc;
+      const r2 = x * x + y * y;
+      const onPlanet = r2 < 1, zp = onPlanet ? Math.sqrt(1 - r2) : -9;
+      const rr = Math.hypot(x, y / si), zr = y * ci / si;
+      const d = ringDensity(rr);
+      let c = null, k = 0, s = 1;
+      trail[i] *= tdecay;
+
+      // Faint rings let the planet show through, dithered pixel by pixel
+      const ringHere = d > 0.1 && (!onPlanet || (zr > zp && (d > 0.45 || n < 0.55)));
+      if (ringHere) {
+        // Planet's shadow on the rings
+        const b = x * lx + y * ly + zr * lz, cc = rr * rr - 1;
+        const shaded = b < 0 && b * b - cc > 0;
+        const phi = Math.atan2(y / si, x), ks = ringSpin(rr);
+        const clump = 0.86 + 0.14 * Math.sin(phi * 7 - ks * th + rr * 30) * Math.sin(phi * 3 - ks * th + rr * 11);
+        const spoke = rr > 1.55 && rr < 1.9 && Math.sin(5 * (phi - kSpin * th)) > 0.93 ? 0.78 : 1;
+        const v = d * (shaded ? 0.16 : 1) * clump * spoke * (0.88 + 0.24 * n);
+        if (v < 0.11) { c = DUST[(n * 3) | 0]; k = 2; s = 0.55; }
+        else c = RING[clamp(Math.floor(v * 6.4), 0, RING.length - 1)];
+        if (!shaded && d > 0.5 && n > 0.996 && Math.sin(kStar * th + i * 1.3) > 0.6) c = RING[RING.length - 1];
+      } else if (onPlanet) {
+        const z = zp;
+        const lam = x * lx + y * ly + z * lz;
+        const lat = Math.asin(clamp(-ci * y + si * z, -1, 1));
+        const lon = Math.atan2(y * si + z * ci, x) - kSpin * th;
+        const band = 0.5 + 0.2 * Math.sin(lat * 12 + 0.5 * Math.sin(lon * 2 + lat * 6))
+          + 0.1 * Math.sin(lat * 29 + 0.35 * Math.sin(lon * 3 - lat * 4))
+          + 0.15 * Math.exp(-Math.pow(lat / 0.22, 2)) - 0.12 * smooth(0.9, 1.3, Math.abs(lat));
+        // Shadow of the rings on the planet
+        let shadow = 1;
+        const tt = -(-ci * y + si * z) / lN;
+        if (tt > 0) {
+          const hx = x + tt * lx, hy = y + tt * ly, hz = z + tt * lz;
+          shadow = 1 - 0.75 * Math.min(1, ringDensity(Math.hypot(hx, hy, hz)) * 1.3);
+        }
+        let v = (0.05 + 0.95 * Math.pow(Math.max(0, lam), 0.8)) * (0.62 + 0.5 * band) * shadow;
+        v += 0.25 * Math.pow(1 - z, 3) * Math.max(0, lam);
+        v = Math.max(v, 0.03 + 0.04 * Math.max(0, -lam));   // dim ringshine on the night side
+        const lvl = clamp(Math.floor(v * 7.6 + (n - 0.5) * 0.7), 0, 7);
+        // The hexagon around the north pole
+        const colat = Math.PI / 2 - lat;
+        const a = ((lon % (Math.PI / 3)) + Math.PI / 3) % (Math.PI / 3) - Math.PI / 6;
+        const hexd = colat * Math.cos(a);
+        if (hexd < 0.2) c = HEX[Math.max(0, lvl - 1)];
+        else if (hexd < 0.235) c = BODY[Math.max(0, lvl - 2)];
+        else c = BODY[lvl];
+        const storm = Math.exp(-Math.pow(wrap(lon - 1.2) / 0.16, 2) - Math.pow((lat - 0.62) / 0.05, 2));
+        if (storm > 0.45 && lam > 0.15) c = STORM;
+      } else {
+        // Stars and faint dust
+        if (n > 0.9944) {
+          const tw = 0.5 + 0.5 * Math.sin(kStar * th + i * 1.7);
+          c = n > 0.9988 ? STARS[3] : STARS[2]; k = 1; s = 0.45 + 0.4 * tw;
+        } else if (n > 0.975 && n < 0.9782) { c = STARS[1]; k = 2; s = 0.45; }
+      }
+      col[i] = c; kind[i] = k; size[i] = s;
+    }
+  }
+
+  // Moons: a few samples per frame keep their trails continuous
+  sc.heads.length = 0;
+  for (const m of MOONS) {
+    for (let q = 0; q < 4; q++) {
+      const psi = m.k * (th - (TAU * dt / T) * q / 4) + m.off;
+      const u = m.a * Math.cos(psi), v = m.a * Math.sin(psi);
+      const x = u, y = v * si - 0.06 * m.a * Math.sin(psi) * ci, z = v * ci;
+      if (z < 0 && x * x + y * y < 1) continue;               // behind the planet
+      const X = x * rc - y * rs, Y = x * rs + y * rc;
+      const px = Math.floor(cx + X * R), py = Math.floor(cy + Y * R);
+      if (px < 0 || px >= cols || py < 0 || py >= rows) continue;
+      trail[py * cols + px] = 1;
+      if (q === 0) sc.heads.push(py * cols + px);
+    }
+  }
+}
+
+function paint(sc, ctx) {
+  const { cols, rows, col, kind, size, trail, heads, cell: s, W, H } = sc;
+  ctx.fillStyle = '#07070a';
+  ctx.fillRect(0, 0, W, H);
+  const gap = Math.max(1, Math.round(s * 0.12)), bevel = Math.max(1, Math.round(s * 0.1));
+  const inner = s - 2 * gap;
+  ctx.lineWidth = Math.max(1, Math.round(s * 0.1));
+
+  for (let py = 0; py < rows; py++) {
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px, c = col[i];
+      const x = px * s, y = py * s;
+      if (c) {
+        const k = kind[i];
+        if (k === 0) {
+          ctx.fillStyle = c;
+          ctx.fillRect(x + gap, y + gap, inner, inner);
+          if (s >= 6) {
+            ctx.strokeStyle = 'rgba(7,7,10,0.38)';
+            ctx.strokeRect(x + gap + 1.5 * bevel, y + gap + 1.5 * bevel, inner - 3 * bevel, inner - 3 * bevel);
+          }
+        } else {
+          const sz = Math.max(2, inner * size[i]);
+          if (k === 1) { ctx.fillStyle = c; ctx.fillRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz); }
+          else { ctx.strokeStyle = c; ctx.strokeRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz); }
+        }
+      }
+      const tr = trail[i];
+      if (tr > 0.06) {
+        const sz = Math.max(2, inner * (0.25 + 0.4 * tr));
+        ctx.fillStyle = `rgba(243,234,216,${(0.2 + 0.7 * tr).toFixed(2)})`;
+        ctx.fillRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz);
+      }
+    }
+  }
+  ctx.fillStyle = MOON;
+  for (const i of heads) ctx.fillRect((i % cols) * s + gap, Math.floor(i / cols) * s + gap, inner, inner);
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const preview = $('preview'), pctx = preview.getContext('2d');
+let scene = null, t = 0, last = performance.now(), paused = false, exporting = false;
+
+function opts() {
+  return {
+    grid: +$('grid').value, loop: +$('loop').value, tilt: +$('tilt').value, roll: +$('roll').value,
+    zoom: +$('zoom').value / 100, posx: +$('posx').value / 100,
+  };
+}
+function dims() { const [w, h] = $('res').value.split('x').map(Number); return { w, h }; }
+
+function rebuildPreview() {
+  const { w, h } = dims();
+  const k = Math.min(1, 1280 / w);
+  preview.width = Math.round(w * k); preview.height = Math.round(h * k);
+  scene = makeScene(preview.width, preview.height, opts());
+  $('tiltVal').textContent = `${$('tilt').value}°`;
+  $('rollVal').textContent = `${$('roll').value}°`;
+}
+for (const id of ['res', 'grid', 'loop', 'tilt', 'roll', 'zoom', 'posx']) $(id).addEventListener('input', rebuildPreview);
+
+$('pause').addEventListener('click', () => {
+  paused = !paused;
+  $('pause').textContent = paused ? 'Play preview' : 'Pause preview';
+});
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!paused && !exporting) { t += dt; step(scene, t, dt); paint(scene, pctx); }
+  requestAnimationFrame(loop);
+}
+
+// ---------- MP4 export (WebCodecs + mp4-muxer) ----------
+async function pickCodec(w, h, fps, bitrate) {
+  for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.640034', 'avc1.42003e']) {
+    const cfg = { codec, width: w, height: h, bitrate, framerate: fps };
+    try { const r = await VideoEncoder.isConfigSupported(cfg); if (r.supported) return cfg; } catch {}
+  }
+  return null;
+}
+
+$('export').addEventListener('click', async () => {
+  if (!('VideoEncoder' in window)) { $('status').textContent = 'This browser has no WebCodecs. Open the file in Chrome or Edge.'; return; }
+  if (!window.Mp4Muxer) { $('status').textContent = 'The MP4 library did not load. Check your internet connection and reload.'; return; }
+
+  const { w, h } = dims(), o = opts(), fps = +$('fps').value;
+  const total = o.loop * fps, dt = 1 / fps;
+  const bitrate = Math.round(w * h * fps * 0.2);
+  const cfg = await pickCodec(w, h, fps, bitrate);
+  if (!cfg) { $('status').textContent = `Your browser cannot encode H.264 at ${w}×${h}. Try a smaller resolution.`; return; }
+
+  exporting = true;
+  $('export').disabled = true; $('download').hidden = true;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const sc = makeScene(w, h, o);
+
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: 'avc', width: w, height: h, frameRate: fps },
+    fastStart: 'in-memory',
+  });
+  let failed = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { failed = e; } });
+  enc.configure(cfg);
+
+  try {
+    // Run the end of the loop first so the moon trails at frame 0 match the last frame
+    const warm = Math.ceil(fps * 3);
+    for (let f = warm; f > 0; f--) step(sc, o.loop - f * dt, dt);
+
+    const start = performance.now();
+    for (let f = 0; f < total; f++) {
+      if (failed) throw failed;
+      step(sc, f * dt, dt);
+      paint(sc, ctx);
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(f * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+      frame.close();
+      while (enc.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 1));
+      if (f % 5 === 0) {
+        $('progress').style.width = `${(100 * f / total).toFixed(1)}%`;
+        const eta = (performance.now() - start) / (f + 1) * (total - f) / 1000;
+        $('status').textContent = `Rendering frame ${f + 1} of ${total} · about ${Math.ceil(eta)} s left`;
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    await enc.flush();
+    if (failed) throw failed;
+    muxer.finalize();
+
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    const name = `saturn-${w}x${h}-${o.loop}s-${fps}fps.mp4`;
+    const a = $('download');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    a.textContent = `Save ${name} again (${(blob.size / 1e6).toFixed(1)} MB)`;
+    a.hidden = false; a.click();
+    $('progress').style.width = '100%';
+    $('status').textContent = 'Done. The MP4 is in your Downloads folder.';
+  } catch (e) {
+    $('status').textContent = `Export failed: ${e.message || e}. Try 30 fps or a lower resolution.`;
+  } finally {
+    try { enc.close(); } catch {}
+    exporting = false; $('export').disabled = false;
+  }
+});
+
+rebuildPreview();
+requestAnimationFrame(n => { last = n; loop(n); });
+</script>
+</body>
+</html>

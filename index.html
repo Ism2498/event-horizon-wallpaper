@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event Horizon — Native Pixel-Art Video Wallpaper Engine for Windows</title>
+<meta name="description" content="A ~115 KB native Windows 11/10 GPU video wallpaper engine with auto-pause, multi-monitor support, star-streak warp transitions, and 5 interactive pixel-art space studios.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --void: #07060b;
+    --panel: rgba(15, 13, 21, 0.86);
+    --raised: #191522;
+    --line: #342d42;
+    --ink: #f3ece4;
+    --muted: #9a8f99;
+    --accent: #f5a04a;
+    --accent-hi: #ffc27d;
+    --accent-deep: #9e4e18;
+    --ok: #7fd88a;
+    --font-pixel: "Silkscreen", monospace;
+    --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--void); color: var(--ink); font-family: var(--font-sans); scroll-behavior: smooth; }
+  a { color: inherit; text-decoration: none; }
+
+  /* Full-bleed live pixel-art space canvas */
+  #hero-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+    image-rendering: pixelated;
+  }
+  .vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 72% 38%, transparent 12%, rgba(7, 6, 11, 0.55) 75%),
+      linear-gradient(180deg, rgba(7, 6, 11, 0.35) 0%, rgba(7, 6, 11, 0.15) 38%, rgba(7, 6, 11, 0.94) 82%, var(--void) 100%);
+  }
+
+  .wrap { position: relative; z-index: 2; max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+  /* Top nav */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 0;
+    gap: 16px;
+  }
+  .brand {
+    font-family: var(--font-pixel);
+    font-size: 1rem;
+    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-dot { width: 10px; height: 10px; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+  nav { display: flex; gap: 22px; font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); }
+  nav a:hover { color: var(--ink); }
+
+  /* Hero */
+  .hero {
+    min-height: 78vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 40px 0 64px;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--ok);
+    background: rgba(127, 216, 138, 0.09);
+    border: 1px solid rgba(127, 216, 138, 0.32);
+    padding: 6px 12px;
+    margin-bottom: 20px;
+  }
+  h1 {
+    font-family: var(--font-pixel);
+    font-size: clamp(2.1rem, 5.2vw, 3.8rem);
+    line-height: 1.08;
+    margin: 0 0 18px;
+    max-width: 15ch;
+    text-shadow: 0 4px 28px rgba(0, 0, 0, 0.8);
+  }
+  h1 span { color: var(--accent-hi); }
+  .lead {
+    font-size: 1.08rem;
+    line-height: 1.65;
+    color: #d6cdd4;
+    max-width: 54ch;
+    margin: 0 0 28px;
+  }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 34px; }
+  .btn {
+    font-family: var(--font-pixel);
+    font-size: 0.84rem;
+    padding: 14px 22px;
+    border: 2px solid var(--accent-deep);
+    background: var(--accent);
+    color: #0b0810;
+    box-shadow: 4px 4px 0 var(--accent-deep);
+    transition: transform 120ms ease, filter 120ms ease;
+    cursor: pointer;
+  }
+  .btn:hover { transform: translate(-1px, -1px); filter: brightness(1.08); }
+  .btn.ghost {
+    background: var(--panel);
+    color: var(--ink);
+    border-color: var(--line);
+    box-shadow: 4px 4px 0 #1f1a2a;
+  }
+
+  /* Live canvas scene switcher */
+  .switcher {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 10px 14px;
+    width: fit-content;
+    backdrop-filter: blur(8px);
+  }
+  .switcher-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-right: 6px;
+  }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 6px 11px;
+    background: var(--raised);
+    color: var(--muted);
+    border: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .chip.active, .chip:hover { color: var(--ink); border-color: var(--accent); }
+  .chip.active { background: rgba(245, 160, 74, 0.16); color: var(--accent-hi); }
+
+  /* Sections */
+  section { padding: 64px 0; }
+  h2 {
+    font-family: var(--font-pixel);
+    font-size: 1.45rem;
+    color: var(--accent-hi);
+    margin: 0 0 10px;
+  }
+  .sec-sub { color: var(--muted); margin: 0 0 28px; max-width: 60ch; line-height: 1.6; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 20px;
+    backdrop-filter: blur(8px);
+  }
+  .card h3 {
+    font-family: var(--font-pixel);
+    font-size: 0.92rem;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+  .card p { margin: 0; font-size: 0.92rem; line-height: 1.6; color: var(--muted); }
+
+  /* Studio cards */
+  .studio-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 20px;
+    transition: border-color 140ms ease, transform 140ms ease;
+  }
+  .studio-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .swatch-bar { display: flex; gap: 4px; margin-bottom: 10px; }
+  .swatch-bar span { width: 14px; height: 14px; display: block; }
+  .studio-link {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--accent-hi);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Comparison table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--font-pixel); font-size: 0.78rem; color: var(--accent-hi); background: rgba(25, 21, 34, 0.9); }
+  td.good { color: var(--ok); font-family: var(--font-mono); font-weight: 600; }
+  td.dim { color: var(--muted); font-family: var(--font-mono); }
+
+  pre {
+    background: #0d0b14;
+    border: 1px solid var(--line);
+    padding: 18px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+    line-height: 1.6;
+    color: #e9dfd6;
+  }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 28px 0 48px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<canvas id="hero-canvas"></canvas>
+<div class="vignette"></div>
+
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="brand-dot"></span>EVENT HORIZON</div>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#studios">Studios</a>
+      <a href="#compare">Why Native</a>
+      <a href="#install">Build</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">~115 KB NATIVE WINDOWS ENGINE &middot; ZERO EXTERNAL RUNTIMES</div>
+      <h1>PIXEL-ART SPACE <span>WALLPAPER</span> ENGINE</h1>
+      <p class="lead">
+        Hardware-decoded D3D11 + Media Foundation video wallpapers behind your Windows 11/10 desktop icons.
+        Auto-pauses on fullscreen apps and battery, supports multi-monitor setups, and ships with 5 live browser studios.
+      </p>
+      <div class="cta-row">
+        <a class="btn" id="download-btn" href="https://github.com/Ism2498/event-horizon-wallpaper/releases/latest" target="_blank" rel="noopener">DOWNLOAD FOR WINDOWS</a>
+        <a class="btn ghost" href="#studios">OPEN LIVE STUDIOS</a>
+      </div>
+
+      <div class="switcher" role="group" aria-label="Live background scene">
+        <span class="switcher-label">Live Preview</span>
+        <button class="chip active" data-scene="ton618">TON 618</button>
+        <button class="chip" data-scene="sgrA">Sagittarius A*</button>
+        <button class="chip" data-scene="quasar">Quasar</button>
+        <button class="chip" data-scene="saturn">Saturn</button>
+      </div>
+    </section>
+
+    <section id="features">
+      <h2>ENGINE FEATURES</h2>
+      <p class="sec-sub">Everything you actually use from a modern wallpaper engine, without dragging Chromium or mpv into RAM.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>AUTO-PAUSE</h3>
+          <p>Automatically halts video decoding on fullscreen or maximized apps and when running on laptop battery — dropping CPU/GPU usage to ~0%.</p>
+        </div>
+        <div class="card">
+          <h3>MULTI-MONITOR</h3>
+          <p>Duplicate independently per display, span across your virtual desktop, or run on primary only. Handles display hot-plugging live.</p>
+        </div>
+        <div class="card">
+          <h3>DROP ANY VIDEO</h3>
+          <p>Drag and drop any .mp4, .m4v, .mov, or .wmv file or folder straight onto the pixel-art Control Panel, with Fill, Fit, or Stretch scaling.</p>
+        </div>
+        <div class="card">
+          <h3>WARP TRANSITIONS</h3>
+          <p>Extracts bright stars from the departing frame and streaks them across deep space while smoothly swapping to the next loop.</p>
+        </div>
+        <div class="card">
+          <h3>PLAYBACK SPEED</h3>
+          <p>Run calm 0.5x ambient orbits or crisp 2x time-lapses on the fly from the tray menu or Control Panel.</p>
+        </div>
+        <div class="card">
+          <h3>WINDOWS 11 24H2 READY</h3>
+          <p>Properly slots a per-monitor DPI-aware layered child window between SHELLDLL_DefView and WorkerW on modern Windows 11.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="studios">
+      <h2>LIVE BROWSER STUDIOS</h2>
+      <p class="sec-sub">Customize tilt, zoom, pixel grid size, and export seamless 1080p, 1440p, or 4K 60fps MP4 loops directly in Chrome or Edge via WebCodecs.</p>
+      <div class="grid">
+        <a class="studio-card" href="./event-horizon-closeup.html">
+          <div>
+            <div class="swatch-bar"><span style="background:#6e170b"></span><span style="background:#e05617"></span><span style="background:#f5803a"></span><span style="background:#fff3e6"></span></div>
+            <h3>TON 618 CLOSE-UP</h3>
+            <p>Sweeping accretion disk and gravitational lensing arc in warm ember tones.</p>
+          </div>
+          <span class="studio-link">Launch Studio &rarr;</span>
+        </a>
+        <a class="studio-card" href="./sagittarius-a.html">
+          <div>
+            <div class="swatch-bar"><span style="background:#27b6cc"></span><span style="background:#8648d8"></span><span style="background:#de4db3"></span><span style="background:#fff2ff"></span></div>
+            <h3>SAGITTARIUS A*</h3>
+            <p>Galactic center black hole in electric cyan, violet, and magenta.</p>
+          </div>
+          <span class="studio-link">Launch Studio &rarr;</span>
+        </a>
+        <a class="studio-card" href="./quasar.html">
+          <div>
+            <div class="swatch-bar"><span style="background:#203584"></span><span style="background:#2f4fae"></span><span style="background:#6f93e6"></span><span style="background:#eef3ff"></span></div>
+            <h3>QUASAR</h3>
+            <p>Relativistic polar jets cutting through a deep cobalt pixel starfield.</p>
+          </div>
+          <span class="studio-link">Launch Studio &rarr;</span>
+        </a>
+        <a class="studio-card" href="./saturn.html">
+          <div>
+            <div class="swatch-bar"><span style="background:#4d4232"></span><span style="background:#7d5426"></span><span style="background:#c99a55"></span><span style="background:#efe5c8"></span></div>
+            <h3>SATURN</h3>
+            <p>Banded gas giant with rotating pixelated ring shadows.</p>
+          </div>
+          <span class="studio-link">Launch Studio &rarr;</span>
+        </a>
+        <a class="studio-card" href="./earth-moon.html">
+          <div>
+            <div class="swatch-bar"><span style="background:#1d5a9c"></span><span style="background:#2f7cc0"></span><span style="background:#4a7a2e"></span><span style="background:#f7fbff"></span></div>
+            <h3>EARTH &amp; MOON</h3>
+            <p>Orbital pixel-art Earth with drifting cloud cover and lunar pass.</p>
+          </div>
+          <span class="studio-link">Launch Studio &rarr;</span>
+        </a>
+      </div>
+    </section>
+
+    <section id="compare">
+      <h2>WHY NATIVE C#?</h2>
+      <p class="sec-sub">Built to stay out of your way on a laptop.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Event Horizon</th><th>Typical Electron / WebView Engines</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Executable Size</td><td class="good">~115 KB</td><td class="dim">150 - 350 MB</td></tr>
+            <tr><td>Dependencies</td><td class="good">Zero (Windows built-in csc.exe + Media Foundation)</td><td class="dim">Chromium / WebView2 / mpv / .NET Desktop Runtime</td></tr>
+            <tr><td>Video Decode</td><td class="good">D3D11 Hardware GPU</td><td class="dim">Mixed GPU / software</td></tr>
+            <tr><td>Fullscreen &amp; Battery Auto-Pause</td><td class="good">Built-in</td><td class="dim">Built-in</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="install">
+      <h2>BUILD FROM SOURCE</h2>
+      <p class="sec-sub">No Visual Studio needed — compiles in under 2 seconds using the C# compiler already inside Windows.</p>
+      <pre><code>git clone https://github.com/Ism2498/event-horizon-wallpaper.git
+cd event-horizon-wallpaper
+powershell -ExecutionPolicy Bypass -File .\video-wallpaper.ps1 -BuildOnly
+.\VideoWallpaper.exe "path\to\your-loop.mp4"</code></pre>
+    </section>
+  </main>
+
+  <footer>
+    <span>Event Horizon Wallpaper &middot; MIT License</span>
+    <span>Pixel font: Silkscreen (SIL OFL 1.1)</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('hero-canvas');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const palettes = {
+    ton618: ['#3a0d08', '#6e170b', '#b1300f', '#e05617', '#f5803a', '#f9aa72', '#fcd2ac', '#fff3e6'],
+    sgrA:   ['#170d33', '#2e165e', '#5a29a2', '#8648d8', '#de4db3', '#27b6cc', '#9beeff', '#fff2ff'],
+    quasar: ['#091233', '#152560', '#203584', '#2f4fae', '#4f74cf', '#6f93e6', '#9cb6f3', '#eef3ff'],
+    saturn: ['#241d15', '#4d4232', '#7d5426', '#a6763a', '#c99a55', '#dfc18b', '#efe5c8', '#fff8e6']
+  };
+  let scene = 'ton618';
+  let t = 0;
+
+  document.querySelectorAll('.chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      scene = btn.dataset.scene;
+    });
+  });
+
+  function sm(a, b, x) {
+    const q = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return q * q * (3 - 2 * q);
+  }
+
+  let cols = 0, rows = 0, cell = 10;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    cell = Math.max(8, Math.round(Math.min(canvas.width, canvas.height) / 88));
+    cols = Math.ceil(canvas.width / cell);
+    rows = Math.ceil(canvas.height / cell);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function frame() {
+    t += 0.025;
+    const pal = palettes[scene];
+    ctx.fillStyle = '#07060b';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = cols * 0.72, cy = rows * 0.44;
+    const R = Math.min(cols, rows) * (scene === 'saturn' ? 0.14 : 0.105);
+    const roll = scene === 'saturn' ? -0.34 : -0.28;
+    const rc = Math.cos(roll), rs = Math.sin(roll);
+    const si = scene === 'saturn' ? 0.26 : 0.28;
+    const gap = Math.max(1, Math.floor(cell * 0.12));
+
+    for (let py = 0; py < rows; py++) {
+      for (let px = 0; px < cols; px++) {
+        const X = (px + 0.5 - cx) / R;
+        const Y = (py + 0.5 - cy) / R;
+        const r = Math.hypot(X, Y);
+        const x = X * rc + Y * rs;
+        const y = -X * rs + Y * rc;
+        const yd = y / si;
+        const rd = Math.hypot(x, yd);
+        const phi = Math.atan2(yd, x);
+
+        let I = 0;
+        if (scene === 'saturn') {
+          if (rd > 1.35 && rd < 2.65 && (r > 1 || y > 0)) {
+            const band = 0.65 + 0.35 * Math.sin(rd * 18 + Math.sin(phi * 2 + t * 0.6));
+            const cassini = Math.abs(rd - 2.02) < 0.08 ? 0.15 : 1;
+            I = band * cassini * 0.95;
+          }
+          if (r < 1.0) {
+            const shade = Math.max(0.08, 0.65 - X * 0.38 - Y * 0.22);
+            const stripe = 0.85 + 0.15 * Math.sin(y * 12);
+            I = shade * stripe * 0.95;
+          }
+        } else {
+          const disk = (d, a) => {
+            if (d < 1.35 || d > 7.2) return 0;
+            const prof = sm(1.35, 1.7, d) * (1 - sm(2.5, 7.2, d)) * Math.pow(2 / d, 1.15) * 1.35;
+            const rot = a - t * 1.35 * Math.pow(d / 1.5, -1.4);
+            return prof * Math.max(0, 0.55 + 0.25 * Math.sin(d * 7 + 1.5 * Math.sin(rot * 2 + d * 0.7)) + 0.2 * Math.sin(rot * 3 + d * 2));
+          };
+          if (r > 1 || y > 0) I += disk(rd, phi) * (1 + 0.45 * (-x / Math.max(rd, 0.01)));
+          if (r > 1 && r < 2.5 && y < 0) I += disk(1.45 + (r - 1.03) * 3, Math.atan2(y, x) + Math.PI);
+          I += 1.35 * Math.exp(-Math.pow((r - 1.04) / 0.065, 2));
+          if (scene === 'quasar' && Math.abs(x) < 0.32 && Math.abs(y) > 0.95) {
+            I += (1 - Math.abs(x) / 0.32) * Math.exp(-Math.abs(y) * 0.18) * (0.9 + 0.25 * Math.sin(Math.abs(y) * 4 - t * 6));
+          }
+          if (r < 0.96 && (y <= 0 || Math.abs(yd) > 7.2)) I = 0;
+        }
+
+        if (I >= 0.14) {
+          const idx = Math.min(7, Math.floor((I - 0.14) / 0.14));
+          ctx.fillStyle = pal[idx];
+          ctx.fillRect(px * cell + gap, py * cell + gap, cell - gap * 2, cell - gap * 2);
+        } else {
+          const h = (((px * 73856093) ^ (py * 19349663)) >>> 0) * 2654435761 >>> 0;
+          if ((h >>> 8) % 1000 < 14) {
+            const tw = 0.45 + 0.55 * Math.sin(t * 2.1 + (h & 255));
+            const sz = Math.max(2, Math.floor((cell - gap * 2) * (0.28 + 0.38 * tw)));
+            const v = Math.floor(110 + 135 * tw);
+            ctx.fillStyle = `rgb(${v},${Math.floor(v * 0.96)},${Math.floor(v * 0.93)})`;
+            ctx.fillRect(px * cell + ((cell - sz) >> 1), py * cell + ((cell - sz) >> 1), sz, sz);
+          }
+        }
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

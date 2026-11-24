@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event Horizon Wallpaper</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
+<style>
+  :root {
+    --void: #0b0b0f;
+    --panel: #121219;
+    --dust: #3b3b46;
+    --ink: #e9e5d8;
+    --muted: #8a8796;
+    --flare: #f7c94b;
+    --hot: #ea2b1f;
+    --font-display: "Silkscreen", "JetBrains Mono", ui-monospace, monospace;
+    --font-ui: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--void); color: var(--ink); font-family: var(--font-ui);
+    display: grid; grid-template-columns: 1fr 300px;
+  }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+  .stage { display: grid; place-items: center; padding: 24px; min-width: 0; min-height: 0; }
+  #preview { max-width: 100%; max-height: 100%; outline: 1px solid var(--dust); background: var(--void); }
+  aside {
+    background: var(--panel); border-left: 1px solid var(--dust);
+    padding: 24px 20px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto;
+  }
+  h1 { font-family: var(--font-display); font-weight: 400; font-size: 1.15rem; margin: 0; letter-spacing: .05em; }
+  .sub { color: var(--muted); font-size: .75rem; margin: -10px 0 0; line-height: 1.5; }
+  label { display: grid; gap: 6px; font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  select, input[type=range] { width: 100%; }
+  select {
+    font: .8rem var(--font-ui); color: var(--ink); background: var(--void);
+    border: 1px solid var(--dust); padding: 7px 8px;
+  }
+  input[type=range] { accent-color: var(--flare); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    font: 600 .8rem/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase;
+    padding: 12px; cursor: pointer; border: 1px solid var(--flare);
+    background: var(--flare); color: var(--void);
+  }
+  button.ghost { background: transparent; color: var(--ink); border-color: var(--dust); }
+  button:disabled { opacity: .45; cursor: wait; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--flare); outline-offset: 2px; }
+  .bar { height: 8px; border: 1px solid var(--dust); }
+  .bar > div { height: 100%; width: 0; background: var(--hot); }
+  #status { font-size: .75rem; color: var(--muted); line-height: 1.5; min-height: 2.2em; }
+  #download { color: var(--flare); font-size: .8rem; word-break: break-all; }
+  .hint { font-size: .7rem; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--dust); padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="stage"><canvas id="preview"></canvas></div>
+
+<aside>
+  <h1>Event Horizon</h1>
+  <p class="sub">A seamless pixel black hole loop. Tune it here, then export an MP4 at full wallpaper size.</p>
+
+  <label for="res">Resolution
+    <select id="res">
+      <option value="1920x1080">1920 × 1080 (Full HD)</option>
+      <option value="2560x1440" selected>2560 × 1440 (QHD)</option>
+      <option value="3840x2160">3840 × 2160 (4K)</option>
+      <option value="2560x1600">2560 × 1600 (16:10)</option>
+      <option value="3440x1440">3440 × 1440 (Ultrawide)</option>
+      <option value="1080x1920">1080 × 1920 (Phone)</option>
+    </select>
+  </label>
+
+  <label for="grid">Pixel size
+    <select id="grid">
+      <option value="150">Fine</option>
+      <option value="100" selected>Medium</option>
+      <option value="64">Chunky</option>
+    </select>
+  </label>
+
+  <div class="row">
+    <label for="loop">Loop
+      <select id="loop">
+        <option value="10">10 s</option>
+        <option value="20" selected>20 s</option>
+        <option value="30">30 s</option>
+      </select>
+    </label>
+    <label for="fps">Frame rate
+      <select id="fps">
+        <option value="30" selected>30 fps</option>
+        <option value="60">60 fps</option>
+      </select>
+    </label>
+  </div>
+
+  <label for="tilt">Disk tilt <span id="tiltVal"></span>
+    <input id="tilt" type="range" min="4" max="36" value="12">
+  </label>
+
+  <label for="scale">Black hole size
+    <input id="scale" type="range" min="50" max="160" value="100">
+  </label>
+
+  <button id="export" type="button">Export MP4</button>
+  <button id="pause" type="button" class="ghost">Pause preview</button>
+  <div class="bar"><div id="progress"></div></div>
+  <div id="status">Ready. Exporting renders every frame offline, so it runs faster or slower than real time depending on your machine.</div>
+  <a id="download" hidden></a>
+
+  <p class="hint">The first and last frames match, so the video loops without a visible jump.<br><br>
+  Windows has no built-in video wallpapers. Use the free <b>Lively Wallpaper</b> app (Microsoft Store) or Wallpaper Engine, and point it at the exported MP4.<br><br>
+  Export needs Chrome or Edge, which support WebCodecs.</p>
+</aside>
+
+<script>
+// ---------- Renderer (pure: same state + time gives the same frame) ----------
+const LEVELS = ['#5a0f12', '#b3191a', '#ea2b1f', '#f0862b', '#f7c94b', '#f3efe2'];
+const BLUE = ['#1b2fae', '#2f54ff'];
+const DUST = ['#2a2a33', '#3b3b46', '#55525f'];
+const TAU = Math.PI * 2;
+
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+
+// Seeded random so preview and export share the same star/dust layout
+function mulberry(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+function makeScene(W, H, opts) {
+  const cell = Math.min(W, H) / opts.grid;
+  const cols = Math.ceil(W / cell), rows = Math.ceil(H / cell);
+  const rand = mulberry(1337);
+  const rnd = new Float32Array(cols * rows);
+  for (let i = 0; i < rnd.length; i++) rnd[i] = rand();
+  return { W, H, cell, cols, rows, rnd, buf: new Float32Array(cols * rows), hueBuf: new Float32Array(cols * rows), opts };
+}
+
+// Integer cycles per loop keep every motion periodic in T
+const cyc = (radPerSec, T) => Math.max(1, Math.round(radPerSec * T / TAU));
+
+function step(sc, t, dt) {
+  const { cols, rows, rnd, buf, hueBuf, opts } = sc;
+  const T = opts.loop, th = TAU * (t % T) / T;
+  const tilt = Math.sin(opts.tilt * Math.PI / 180);
+  const R = Math.min(cols, rows * 1.6) * 0.085 * opts.scale;
+  const cx = cols / 2, cy = rows / 2 - rows * 0.02;
+  const decay = Math.pow(0.84, dt * 60);
+  const kRing = cyc(3, T), kDrift = cyc(0.8, T), kStar = cyc(2, T), kTex = cyc(0.7, T);
+
+  // Quantised Keplerian spin per radius, cached in bands
+  const spinCache = new Map();
+  const spin = rd => {
+    const key = Math.round(rd * 20);
+    let v = spinCache.get(key);
+    if (v === undefined) { v = cyc(2.2 * Math.pow(key / 20, -1.5), T); spinCache.set(key, v); }
+    return v;
+  };
+
+  const disk = (rd, phi) => {
+    if (rd < 1.5 || rd > 6.5) return 0;
+    const profile = smooth(1.5, 2.0, rd) * (1 - smooth(3.2, 6.5, rd)) * Math.pow(2.1 / rd, 1.1);
+    const rot = phi - spin(rd) * th;
+    const tex = 0.55
+      + 0.24 * Math.sin(rot * 3 + rd * 3.7)
+      + 0.14 * Math.sin(rot * 7 - rd * 8.3 + 1.3)
+      + 0.10 * Math.sin(rot * 13 + rd * 15.1 + kTex * th);
+    return profile * tex;
+  };
+
+  for (let py = 0; py < rows; py++) {
+    const y = (py + 0.5 - cy) / R;
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px;
+      const x = (px + 0.5 - cx) / R;
+      const r = Math.hypot(x, y);
+      const yd = y / tilt;
+      const rd = Math.hypot(x, yd);
+      const phi = Math.atan2(yd, x);
+      const dop = -x / Math.max(rd, 0.001);
+      const front = y > 0;
+      let I = 0, hue = 0;
+
+      if (r > 1 || front) { const d = disk(rd, phi) * (1 + 0.55 * dop); I += d; hue += dop * d; }
+
+      if (r > 1.02 && r < 2.6) {
+        const a = Math.atan2(y, x);
+        const l = disk(1.55 + (r - 1.06) * 2.6, a + Math.PI) * (y < 0 ? 0.95 : 0.38) * (1 - 0.45 * Math.cos(a));
+        I += l; hue += -Math.cos(a) * 0.6 * l;
+      }
+
+      I += Math.exp(-Math.pow((r - 1.05) / 0.05, 2)) * (0.75 + 0.25 * Math.sin(Math.atan2(y, x) * 5 - kRing * th));
+
+      if (r < 0.98 && (!front || Math.abs(yd) > 6.5)) I = 0;
+
+      if (I < 0.12) {
+        const halo = Math.exp(-Math.pow(rd / 9, 2)) * (1 - smooth(0, 1.4, Math.abs(y) - 0.6));
+        const drift = Math.sin(px * 0.31 - kDrift * th + py * 0.17) * 0.5 + 0.5;
+        if (halo > 0.05 && rnd[i] < 0.42 * halo * (0.6 + 0.4 * drift)) I = Math.max(I, 0.09);
+        else if (rnd[i] > 0.9965) I = Math.max(I, 0.07 + 0.05 * Math.sin(kStar * th + i));
+      }
+
+      const prev = buf[i] * decay;
+      if (I >= prev) { buf[i] = I; hueBuf[i] = I > 0 ? hue / I : 0; } else buf[i] = prev;
+    }
+  }
+}
+
+function paint(sc, ctx) {
+  const { cols, rows, rnd, buf, hueBuf, cell: s, W, H } = sc;
+  ctx.fillStyle = '#0b0b0f';
+  ctx.fillRect(0, 0, W, H);
+  const gap = Math.max(1, s * 0.12), bevel = Math.max(1, s * 0.08);
+  ctx.lineWidth = Math.max(1, s * 0.08);
+  for (let py = 0; py < rows; py++) {
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px, I = buf[i];
+      if (I < 0.06) continue;
+      const x = px * s, y = py * s, n = rnd[i];
+      if (I < 0.16) {
+        const sz = (s - 2 * gap) * (0.35 + (I / 0.16) * 0.45);
+        ctx.strokeStyle = DUST[(n * 3) | 0];
+        ctx.strokeRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz);
+        continue;
+      }
+      const h = hueBuf[i];
+      let color;
+      if (h > 0.35 && n < 0.22 * h && I > 0.3) color = BLUE[I > 0.6 ? 1 : 0];
+      else if (h < -0.4 && n < 0.12 && I > 0.4) color = LEVELS[2];
+      else color = LEVELS[Math.min(LEVELS.length - 1, Math.floor((I - 0.16) / 0.15))];
+      ctx.fillStyle = color;
+      ctx.fillRect(x + gap, y + gap, s - 2 * gap, s - 2 * gap);
+      ctx.strokeStyle = 'rgba(11,11,15,0.45)';
+      ctx.strokeRect(x + gap + 2 * bevel, y + gap + 2 * bevel, s - 2 * gap - 4 * bevel, s - 2 * gap - 4 * bevel);
+    }
+  }
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const preview = $('preview'), pctx = preview.getContext('2d');
+let scene = null, t = 0, last = performance.now(), paused = false, exporting = false;
+
+function opts() {
+  return { grid: +$('grid').value, loop: +$('loop').value, tilt: +$('tilt').value, scale: +$('scale').value / 100 };
+}
+function dims() { const [w, h] = $('res').value.split('x').map(Number); return { w, h }; }
+
+function rebuildPreview() {
+  const { w, h } = dims();
+  const maxW = 1280, k = Math.min(1, maxW / Math.max(w, h));
+  preview.width = Math.round(w * k); preview.height = Math.round(h * k);
+  scene = makeScene(preview.width, preview.height, opts());
+  $('tiltVal').textContent = `${$('tilt').value}°`;
+}
+for (const id of ['res', 'grid', 'loop', 'tilt', 'scale']) $(id).addEventListener('input', rebuildPreview);
+
+$('pause').addEventListener('click', () => {
+  paused = !paused;
+  $('pause').textContent = paused ? 'Play preview' : 'Pause preview';
+});
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!paused && !exporting) { t += dt; step(scene, t, dt); paint(scene, pctx); }
+  requestAnimationFrame(loop);
+}
+
+// ---------- MP4 export (WebCodecs + mp4-muxer) ----------
+async function pickCodec(w, h, fps, bitrate) {
+  for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.640034', 'avc1.42003e']) {
+    const cfg = { codec, width: w, height: h, bitrate, framerate: fps };
+    try { const r = await VideoEncoder.isConfigSupported(cfg); if (r.supported) return cfg; } catch {}
+  }
+  return null;
+}
+
+$('export').addEventListener('click', async () => {
+  if (!('VideoEncoder' in window)) { $('status').textContent = 'This browser has no WebCodecs. Open the file in Chrome or Edge.'; return; }
+  if (!window.Mp4Muxer) { $('status').textContent = 'The MP4 library did not load. Check your internet connection and reload.'; return; }
+
+  const { w, h } = dims(), o = opts(), fps = +$('fps').value;
+  const total = o.loop * fps, dt = 1 / fps;
+  const bitrate = Math.round(w * h * fps * 0.25);   // generous: crisp pixel edges
+  const cfg = await pickCodec(w, h, fps, bitrate);
+  if (!cfg) { $('status').textContent = `Your browser cannot encode H.264 at ${w}×${h}. Try a smaller resolution.`; return; }
+
+  exporting = true;
+  $('export').disabled = true; $('download').hidden = true;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const sc = makeScene(w, h, o);
+
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: 'avc', width: w, height: h, frameRate: fps },
+    fastStart: 'in-memory',
+  });
+  let failed = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { failed = e; } });
+  enc.configure(cfg);
+
+  try {
+    // Warm up the trails on the end of the loop so frame 0 continues from the last frame
+    const warm = Math.ceil(fps * 1.5);
+    for (let f = warm; f > 0; f--) step(sc, o.loop - f * dt, dt);
+
+    const start = performance.now();
+    for (let f = 0; f < total; f++) {
+      if (failed) throw failed;
+      step(sc, f * dt, dt);
+      paint(sc, ctx);
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(f * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+      frame.close();
+      while (enc.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 1));
+      if (f % 5 === 0) {
+        $('progress').style.width = `${(100 * f / total).toFixed(1)}%`;
+        const eta = (performance.now() - start) / (f + 1) * (total - f) / 1000;
+        $('status').textContent = `Rendering frame ${f + 1} of ${total} · about ${Math.ceil(eta)} s left`;
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    await enc.flush();
+    if (failed) throw failed;
+    muxer.finalize();
+
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    const name = `event-horizon-${w}x${h}-${o.loop}s-${fps}fps.mp4`;
+    const a = $('download');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    a.textContent = `Save ${name} again (${(blob.size / 1e6).toFixed(1)} MB)`;
+    a.hidden = false; a.click();
+    $('progress').style.width = '100%';
+    $('status').textContent = 'Done. The MP4 is in your Downloads folder.';
+  } catch (e) {
+    $('status').textContent = `Export failed: ${e.message || e}. Try a lower resolution or 30 fps.`;
+  } finally {
+    try { enc.close(); } catch {}
+    exporting = false; $('export').disabled = false;
+  }
+});
+
+rebuildPreview();
+requestAnimationFrame(n => { last = n; loop(n); });
+</script>
+</body>
+</html>

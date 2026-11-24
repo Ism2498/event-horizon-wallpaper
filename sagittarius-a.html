@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Sagittarius A*</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
+<style>
+  :root {
+    --void: #05040b;
+    --panel: #0f0d18;
+    --dust: #332c4a;
+    --ink: #efe9ff;
+    --muted: #9289b0;
+    --flare: #b07cf0;
+    --font-display: "Silkscreen", "JetBrains Mono", ui-monospace, monospace;
+    --font-ui: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--void); color: var(--ink); font-family: var(--font-ui);
+    display: grid; grid-template-columns: 1fr 300px;
+  }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+  .stage { display: grid; place-items: center; padding: 24px; min-width: 0; min-height: 0; }
+  #preview { max-width: 100%; max-height: 100%; outline: 1px solid var(--dust); background: var(--void); }
+  aside {
+    background: var(--panel); border-left: 1px solid var(--dust);
+    padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;
+  }
+  h1 { font-family: var(--font-display); font-weight: 400; font-size: 1.1rem; margin: 0; letter-spacing: .05em; }
+  .sub { color: var(--muted); font-size: .75rem; margin: -8px 0 0; line-height: 1.5; }
+  label { display: grid; gap: 6px; font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  select, input[type=range] { width: 100%; }
+  select {
+    font: .8rem var(--font-ui); color: var(--ink); background: var(--void);
+    border: 1px solid var(--dust); padding: 7px 8px;
+  }
+  input[type=range] { accent-color: var(--flare); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    font: 600 .8rem/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase;
+    padding: 12px; cursor: pointer; border: 1px solid var(--flare);
+    background: var(--flare); color: var(--void);
+  }
+  button.ghost { background: transparent; color: var(--ink); border-color: var(--dust); }
+  button:disabled { opacity: .45; cursor: wait; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--flare); outline-offset: 2px; }
+  .bar { height: 8px; border: 1px solid var(--dust); }
+  .bar > div { height: 100%; width: 0; background: var(--flare); }
+  #status { font-size: .75rem; color: var(--muted); line-height: 1.5; min-height: 2.2em; }
+  #download { color: var(--flare); font-size: .8rem; word-break: break-all; }
+  .hint { font-size: .7rem; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--dust); padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="stage"><canvas id="preview"></canvas></div>
+
+<aside>
+  <h1>Sagittarius A*</h1>
+  <p class="sub">A stylised take: the disk burns white-hot at the edge of the shadow and cools through electric cyan, violet and magenta, with its far side bent into a big arc overhead. Streamers of gas spiral in from a coloured nebula, and stars on tight orbits leave neon trails. The loop is seamless.</p>
+
+  <label for="res">Resolution
+    <select id="res">
+      <option value="1920x1080" selected>1920 × 1080 (your laptop)</option>
+      <option value="2560x1440">2560 × 1440</option>
+      <option value="3840x2160">3840 × 2160 (4K)</option>
+    </select>
+  </label>
+
+  <label for="grid">Pixel size
+    <select id="grid">
+      <option value="6">Fine</option>
+      <option value="9" selected>Medium</option>
+      <option value="12">Chunky</option>
+    </select>
+  </label>
+
+  <div class="row">
+    <label for="loop">Loop
+      <select id="loop">
+        <option value="20">20 s</option>
+        <option value="30" selected>30 s</option>
+        <option value="40">40 s</option>
+      </select>
+    </label>
+    <label for="fps">Frame rate
+      <select id="fps">
+        <option value="30">30 fps</option>
+        <option value="60" selected>60 fps</option>
+      </select>
+    </label>
+  </div>
+
+  <label for="label">Name and coordinates
+    <select id="label">
+      <option value="taskbar" selected>In the taskbar, left of the tray icons</option>
+      <option value="corner">Top-right corner</option>
+      <option value="none">Hidden</option>
+    </select>
+  </label>
+  <label for="tilt">Viewing angle <span id="tiltVal"></span>
+    <input id="tilt" type="range" min="6" max="35" value="10">
+  </label>
+  <label for="roll">Disk angle <span id="rollVal"></span>
+    <input id="roll" type="range" min="-25" max="25" value="-8">
+  </label>
+  <label for="zoom">Zoom
+    <input id="zoom" type="range" min="60" max="160" value="100">
+  </label>
+  <label for="posx">Black hole position
+    <input id="posx" type="range" min="30" max="70" value="54">
+  </label>
+
+  <button id="export" type="button">Export MP4</button>
+  <button id="pause" type="button" class="ghost">Pause preview</button>
+  <div class="bar"><div id="progress"></div></div>
+  <div id="status">Ready.</div>
+  <a id="download" hidden></a>
+
+  <p class="hint">The label sits in your transparent taskbar, just left of the tray icons. The default export matches your 1920 × 1080 screen. Exported MP4s in Downloads show up in the video wallpaper's tray menu by themselves. Export needs Chrome or Edge.</p>
+</aside>
+
+<script>
+// ---------- Renderer ----------
+// The disk changes colour with distance from the shadow: white-hot, electric cyan, violet, magenta
+const BANDS = [
+  ['#2a2340', '#5a4f8f', '#9d93d8', '#d8d3ff', '#f5f3ff', '#ffffff'],
+  ['#062634', '#0a4a62', '#117d98', '#27b6cc', '#7ae6f0', '#e0fcff'],
+  ['#1c0e38', '#351868', '#5a29a2', '#8648d8', '#b37ff2', '#e0c8ff'],
+  ['#28092a', '#4b0f47', '#7c196d', '#ae2891', '#de4db3', '#ff9fe0'],
+];
+const STREAM = ['#24124a', '#3a1b70', '#5b2a9e', '#1f4d6e', '#2a7090'];
+const NEBULA = ['#160d2c', '#23123f', '#0e2230', '#14313f', '#2a1036'];
+const STARS = ['#4c4566', '#8a83a8', '#f4f1ff', '#bfe9ff', '#ffc9ef'];
+const TRAILS = [[150, 240, 255], [255, 160, 230], [255, 255, 255]];
+const TAU = Math.PI * 2;
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+
+function mulberry(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function h2(x, y) {
+  let h = Math.imul(x, 0x8da6b343) ^ Math.imul(y, 0xd8163841);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
+}
+function noise2(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  let fx = x - xi, fy = y - yi;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = h2(xi, yi), b = h2(xi + 1, yi), c = h2(xi, yi + 1), d = h2(xi + 1, yi + 1);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+function fbm2(x, y) {
+  let s = 0, a = 0.5;
+  for (let o = 0; o < 5; o++) { s += a * noise2(x, y); x = x * 2.03 + 7; y = y * 2.03 + 3; a *= 0.5; }
+  return s / 0.97;
+}
+
+// Stars on tilted orbits around the hole: radii (shadow radii), orbits per loop, phase, trail colour
+const ORBITERS = [
+  { a: 3.4, b: 3.0, k: 3, off: 0.5, inc: 1.9, c: 0 },
+  { a: 5.4, b: 4.6, k: 2, off: 2.8, inc: 1.4, c: 1 },
+  { a: 8.0, b: 6.8, k: 1, off: 4.6, inc: 2.3, c: 2 },
+];
+
+// Cell size is set in 1080p pixels and scaled, so preview and export look identical
+function makeScene(W, H, opts) {
+  const cell = Math.max(2, Math.round(opts.grid * H / 1080));
+  const cols = Math.ceil(W / cell), rows = Math.ceil(H / cell);
+  const rand = mulberry(4100);
+  const n = cols * rows;
+  const rnd = new Float32Array(n);
+  for (let i = 0; i < n; i++) rnd[i] = rand();
+  // A soft two-colour nebula behind everything
+  const neb = new Array(n).fill(null), nebSize = new Float32Array(n);
+  for (let py = 0; py < rows; py++) {
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px;
+      const f = fbm2(px * 0.03 + 5, py * 0.05), g = fbm2(px * 0.06 + 40, py * 0.06 + 9);
+      const v = smooth(0.52, 0.72, f);
+      if (v > 0.05 && rnd[i] < v * 0.3) { neb[i] = NEBULA[(g > 0.5 ? 2 : 0) + (rnd[i] < v * 0.25 ? 1 : 0)]; nebSize[i] = 0.4 + 0.4 * v; }
+    }
+  }
+  return { W, H, cell, cols, rows, rnd, opts, neb, nebSize,
+    buf: new Float32Array(n), band: new Int8Array(n), trail: new Float32Array(n), tcol: new Uint8Array(n), heads: [] };
+}
+
+const cyc = (radPerSec, T) => Math.max(1, Math.round(radPerSec * T / TAU));
+
+function step(sc, t, dt) {
+  const { cols, rows, rnd, buf, band, trail, tcol, opts } = sc;
+  const T = opts.loop, th = TAU * (((t % T) + T) % T) / T;
+  const si = Math.sin(opts.tilt * Math.PI / 180);
+  const rc = Math.cos(opts.roll * Math.PI / 180), rs = Math.sin(opts.roll * Math.PI / 180);
+  const R = rows * 0.15 * opts.zoom;
+  const cx = cols * opts.posx, cy = rows * 0.46;
+  const decay = Math.pow(0.84, dt * 60), tdecay = Math.pow(0.955, dt * 60);
+  const kRing = cyc(4, T), kStar = cyc(1.5, T), kFlick = cyc(1.3, T), kIn = cyc(0.9, T);
+
+  const spinCache = new Map();
+  const spin = rd => {
+    const key = Math.round(rd * 16);
+    let v = spinCache.get(key);
+    if (v === undefined) { v = cyc(3.2 * Math.pow(Math.max(key, 1) / 16, -1.5), T); spinCache.set(key, v); }
+    return v;
+  };
+  const bandOf = (rd, n) => rd < 1.95 + 0.25 * n ? 0 : rd < 2.9 + 0.4 * n ? 1 : rd < 4.4 + 0.6 * n ? 2 : 3;
+
+  const disk = (rd, phi) => {
+    if (rd < 1.45 || rd > 9.5) return 0;
+    const core = 1 + 0.9 * Math.exp(-Math.pow((rd - 1.8) / 0.5, 2));
+    const profile = smooth(1.45, 1.75, rd) * (1 - smooth(3.2, 9.5, rd)) * Math.pow(2 / rd, 1.35) * 0.95 * core;
+    const rot = phi - spin(rd) * th;
+    const tex = 0.5
+      + 0.22 * Math.sin(rd * 7.6 + 1.6 * Math.sin(rot * 2 + rd * 0.7))
+      + 0.14 * Math.sin(rd * 18.4 + rot + 0.8 * Math.sin(rot * 3))
+      + 0.12 * Math.sin(2 * rot + 5 * Math.log(rd))
+      + 0.1 * Math.sin(rot * 5 + rd * 4 + Math.sin(kFlick * th + rd));
+    return profile * Math.max(0, tex);
+  };
+
+  for (let py = 0; py < rows; py++) {
+    const Y = (py + 0.5 - cy) / R;
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px, n = rnd[i];
+      const X = (px + 0.5 - cx) / R;
+      const r = Math.hypot(X, Y);
+      const x = X * rc + Y * rs, y = -X * rs + Y * rc;
+      const yd = y / si, rd = Math.hypot(x, yd), phi = Math.atan2(yd, x);
+      const dop = -x / Math.max(rd, 0.001);
+      const front = y > 0;
+      let I = 0, b = 3;
+      trail[i] *= tdecay;
+
+      if (r > 1 || front) { I = disk(rd, phi) * (1 + 0.45 * dop); b = bandOf(rd, n); }
+
+      // Far side of the disk bent over the top of the shadow, and a thin ring under it
+      if (r > 1.0 && r < 2.7) {
+        const a = Math.atan2(y, x);
+        const rl = y < 0 ? 1.45 + (r - 1.03) * 3.1 : 1.45 + (r - 1.03) * 4.6;
+        const L = disk(rl, a + Math.PI) * (y < 0 ? 1.15 : 0.7) * (1 + 0.3 * (-x / r)) * (1 - smooth(2.2, 2.7, r));
+        if (L > I) b = bandOf(rl, n);
+        I += L;
+      }
+      const ring = 2 * Math.exp(-Math.pow((r - 1.03) / 0.035, 2)) * (0.8 + 0.2 * Math.sin(Math.atan2(y, x) * 4 - kRing * th));
+      if (ring > 0.5) b = -1;
+      I += ring;
+      if (r < 0.97 && (!front || Math.abs(yd) > 14)) I = 0;
+
+      // Streamers of gas spiralling inward from far out
+      if (I < 0.12 && r > 2.6) {
+        const sy = Y / 0.42, rr = Math.hypot(X, sy), ang = Math.atan2(sy, X);
+        const arm = Math.pow(0.5 + 0.5 * Math.sin(2 * ang + 3.4 * Math.log(rr) + kIn * th), 6);
+        const s = arm * Math.exp(-Math.pow((rr - 6.5) / 3.5, 2));
+        if (s > 0.12 && n < s * 0.85) { I = 0.12 + 0.05 * s; b = s > 0.5 ? 5 : 4; }
+      }
+
+      const prev = buf[i] * decay;
+      if (I >= prev) { buf[i] = I; band[i] = b; } else buf[i] = prev;
+    }
+  }
+
+  // Orbiting stars, sampled a few times per frame so their trails stay continuous
+  sc.heads.length = 0;
+  for (let j = 0; j < ORBITERS.length; j++) {
+    const o = ORBITERS[j];
+    for (let q = 0; q < 5; q++) {
+      const psi = o.k * (th - (TAU * dt / T) * q / 5) + o.off;
+      const ex = o.a * Math.cos(psi), ey = o.b * Math.sin(psi);
+      const x = ex, y = ey * si * o.inc;
+      const X = x * rc - y * rs, Y = x * rs + y * rc;
+      if (ey < 0 && Math.hypot(X, Y) < 1.05) continue;           // behind the shadow
+      const px = Math.floor(cx + X * R), py = Math.floor(cy + Y * R);
+      if (px < 0 || px >= cols || py < 0 || py >= rows) continue;
+      trail[py * cols + px] = 1; tcol[py * cols + px] = o.c;
+      if (q === 0) sc.heads.push({ i: py * cols + px, c: o.c });
+    }
+  }
+  sc.twinkle = kStar * th;
+}
+
+const LABEL = {
+  name: 'SAGITTARIUS A*',
+  line: 'RA 17h 45m 40.04s  ·  Dec −29° 00′ 28.1″  ·  4.3 million solar masses  ·  26,700 light-years',
+  accent: '#c9a2ff', ink: 'rgba(244,238,255,0.92)',
+};
+
+// Smooth overlay text (not pixel art). Bottom strip = Windows taskbar (48 px at 125% scaling = 60 of 1080 rows);
+// the tray icons start ~84% across
+const LABEL_FONT = 'Inter, "Segoe UI", system-ui, sans-serif';
+function drawLabel(ctx, W, H, where, lab) {
+  if (where === 'none') return;
+  const k = H / 1080, bar = 60 * k, taskbar = where === 'taskbar';
+  const right = taskbar ? W * 0.818 : W - 40 * k;
+  const y1 = taskbar ? H - bar * 0.47 : 70 * k, y2 = taskbar ? H - bar * 0.13 : 96 * k;
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 6 * k;
+  ctx.font = `600 ${Math.round(21 * k)}px ${LABEL_FONT}`;
+  ctx.letterSpacing = `${(2.4 * k).toFixed(1)}px`;
+  ctx.fillStyle = lab.accent;
+  ctx.fillText(lab.name, right, y1);
+  ctx.font = `400 ${Math.round(13.5 * k)}px ${LABEL_FONT}`;
+  ctx.letterSpacing = `${(0.5 * k).toFixed(1)}px`;
+  ctx.fillStyle = lab.ink;
+  ctx.fillText(lab.line, right, y2);
+  ctx.restore();
+}
+const fontsReady = () => Promise.all([document.fonts.load(`600 21px Inter`), document.fonts.load(`400 14px Inter`)]).catch(() => {});
+
+function paint(sc, ctx) {
+  const { cols, rows, rnd, buf, band, trail, tcol, heads, neb, nebSize, cell: s, W, H, opts } = sc;
+  ctx.fillStyle = '#05040b';
+  ctx.fillRect(0, 0, W, H);
+  const gap = Math.max(1, Math.round(s * 0.12)), bevel = Math.max(1, Math.round(s * 0.1));
+  const inner = s - 2 * gap;
+  ctx.lineWidth = Math.max(1, Math.round(s * 0.1));
+
+  for (let py = 0; py < rows; py++) {
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px, I = buf[i], b = band[i];
+      const x = px * s, y = py * s, n = rnd[i];
+      if (b >= 4 && I >= 0.1) {
+        // Inflowing streamer: small soft tiles
+        const sz = Math.max(2, inner * 0.6);
+        ctx.fillStyle = STREAM[(b === 5 ? 2 : 0) + (n < 0.35 ? 3 : n < 0.6 ? 1 : 0)] || STREAM[1];
+        ctx.fillRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz);
+      } else if (I >= 0.14) {
+        const pal = b < 0 ? BANDS[0] : BANDS[b];
+        const lvl = b < 0 ? 5 : Math.min(5, Math.floor((I - 0.14) / 0.16));
+        ctx.fillStyle = lvl >= 2 && lvl < 5 && n < 0.05 ? pal[5] : pal[lvl];
+        ctx.fillRect(x + gap, y + gap, inner, inner);
+        if (s >= 6) {
+          ctx.strokeStyle = 'rgba(5,4,11,0.38)';
+          ctx.strokeRect(x + gap + 1.5 * bevel, y + gap + 1.5 * bevel, inner - 3 * bevel, inner - 3 * bevel);
+        }
+      } else if (I >= 0.06 && b >= 0 && b < 4) {
+        const sz = Math.max(2, inner * (0.35 + (I / 0.14) * 0.45));
+        ctx.strokeStyle = BANDS[b][1]; ctx.strokeRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz);
+      } else if (n > 0.9945) {
+        const tw = 0.5 + 0.5 * Math.sin(sc.twinkle + i * 1.7), sz = Math.max(2, inner * (0.4 + 0.4 * tw));
+        ctx.fillStyle = STARS[2 + (i % 3)];
+        ctx.fillRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz);
+      } else if (neb[i]) {
+        const sz = Math.max(2, inner * nebSize[i]);
+        ctx.strokeStyle = neb[i]; ctx.strokeRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz);
+      }
+      const tr = trail[i];
+      if (tr > 0.06) {
+        const c = TRAILS[tcol[i]], sz = Math.max(2, inner * (0.25 + 0.45 * tr));
+        ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(0.2 + 0.75 * tr).toFixed(2)})`;
+        ctx.fillRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz);
+      }
+    }
+  }
+  for (const h of heads) {
+    const x = (h.i % cols) * s, y = Math.floor(h.i / cols) * s, c = TRAILS[h.c];
+    ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+    ctx.fillRect(x + gap, y + gap, inner, inner);
+    const arm = inner * 0.45;
+    for (const [ox, oy] of [[-s, 0], [s, 0], [0, -s], [0, s]]) ctx.fillRect(x + ox + (s - arm) / 2, y + oy + (s - arm) / 2, arm, arm);
+  }
+  drawLabel(ctx, W, H, opts.label, LABEL);
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const preview = $('preview'), pctx = preview.getContext('2d');
+let scene = null, t = 0, last = performance.now(), paused = false, exporting = false;
+
+function opts() {
+  return {
+    grid: +$('grid').value, loop: +$('loop').value, label: $('label').value, tilt: +$('tilt').value, roll: +$('roll').value,
+    zoom: +$('zoom').value / 100, posx: +$('posx').value / 100,
+  };
+}
+function dims() { const [w, h] = $('res').value.split('x').map(Number); return { w, h }; }
+
+function rebuildPreview() {
+  const { w, h } = dims();
+  const k = Math.min(1, 1280 / w);
+  preview.width = Math.round(w * k); preview.height = Math.round(h * k);
+  scene = makeScene(preview.width, preview.height, opts());
+  $('tiltVal').textContent = `${$('tilt').value}°`;
+  $('rollVal').textContent = `${$('roll').value}°`;
+}
+for (const id of ['res', 'grid', 'loop', 'label', 'tilt', 'roll', 'zoom', 'posx']) $(id).addEventListener('input', rebuildPreview);
+
+$('pause').addEventListener('click', () => {
+  paused = !paused;
+  $('pause').textContent = paused ? 'Play preview' : 'Pause preview';
+});
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!paused && !exporting) { t += dt; step(scene, t, dt); paint(scene, pctx); }
+  requestAnimationFrame(loop);
+}
+
+// ---------- MP4 export (WebCodecs + mp4-muxer) ----------
+async function pickCodec(w, h, fps, bitrate) {
+  for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.640034', 'avc1.42003e']) {
+    const cfg = { codec, width: w, height: h, bitrate, framerate: fps };
+    try { const r = await VideoEncoder.isConfigSupported(cfg); if (r.supported) return cfg; } catch {}
+  }
+  return null;
+}
+
+$('export').addEventListener('click', async () => {
+  if (!('VideoEncoder' in window)) { $('status').textContent = 'This browser has no WebCodecs. Open the file in Chrome or Edge.'; return; }
+  if (!window.Mp4Muxer) { $('status').textContent = 'The MP4 library did not load. Check your internet connection and reload.'; return; }
+
+  const { w, h } = dims(), o = opts(), fps = +$('fps').value;
+  const total = o.loop * fps, dt = 1 / fps;
+  const bitrate = Math.round(w * h * fps * 0.2);
+  const cfg = await pickCodec(w, h, fps, bitrate);
+  if (!cfg) { $('status').textContent = `Your browser cannot encode H.264 at ${w}×${h}. Try a smaller resolution.`; return; }
+
+  exporting = true;
+  $('export').disabled = true; $('download').hidden = true;
+  await fontsReady();
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const sc = makeScene(w, h, o);
+
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: 'avc', width: w, height: h, frameRate: fps },
+    fastStart: 'in-memory',
+  });
+  let failed = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { failed = e; } });
+  enc.configure(cfg);
+
+  try {
+    // Run the end of the loop first so glow and trails at frame 0 match the last frame
+    const warm = Math.ceil(fps * 3);
+    for (let f = warm; f > 0; f--) step(sc, o.loop - f * dt, dt);
+
+    const start = performance.now();
+    for (let f = 0; f < total; f++) {
+      if (failed) throw failed;
+      step(sc, f * dt, dt);
+      paint(sc, ctx);
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(f * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+      frame.close();
+      while (enc.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 1));
+      if (f % 5 === 0) {
+        $('progress').style.width = `${(100 * f / total).toFixed(1)}%`;
+        const eta = (performance.now() - start) / (f + 1) * (total - f) / 1000;
+        $('status').textContent = `Rendering frame ${f + 1} of ${total} · about ${Math.ceil(eta)} s left`;
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    await enc.flush();
+    if (failed) throw failed;
+    muxer.finalize();
+
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    const name = `sagittarius-a-${w}x${h}-${o.loop}s-${fps}fps.mp4`;
+    const a = $('download');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    a.textContent = `Save ${name} again (${(blob.size / 1e6).toFixed(1)} MB)`;
+    a.hidden = false; a.click();
+    $('progress').style.width = '100%';
+    $('status').textContent = 'Done. The MP4 is in your Downloads folder.';
+  } catch (e) {
+    $('status').textContent = `Export failed: ${e.message || e}. Try 30 fps or a lower resolution.`;
+  } finally {
+    try { enc.close(); } catch {}
+    exporting = false; $('export').disabled = false;
+  }
+});
+
+rebuildPreview();
+fontsReady();
+requestAnimationFrame(n => { last = n; loop(n); });
+</script>
+</body>
+</html>

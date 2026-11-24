@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transition Demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=Inter:wght@400;600&display=swap">
+<style>
+  :root {
+    --void: #05040b;
+    --panel: rgba(13, 11, 18, 0.88);
+    --line: #3a3346;
+    --ink: #f3ece4;
+    --muted: #9a8f99;
+    --accent: #f5a04a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--void); overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+  video { display: none; }
+  .bar {
+    position: fixed; left: 16px; bottom: 16px; right: 16px; max-width: 640px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    background: var(--panel); border: 2px solid var(--line); padding: 12px 14px;
+    font: 14px Inter, "Segoe UI", sans-serif; color: var(--ink);
+  }
+  .title { font-family: Silkscreen, monospace; color: var(--accent); letter-spacing: .06em; width: 100%; }
+  label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  select {
+    font: 14px Inter, "Segoe UI", sans-serif; color: var(--ink); background: #0d0b12;
+    border: 2px solid var(--line); padding: 4px 6px;
+  }
+  button {
+    font: 13px Silkscreen, monospace; letter-spacing: .06em; padding: 8px 12px; cursor: pointer;
+    background: var(--accent); color: #0d0b12; border: 0; box-shadow: 3px 3px 0 #a8561c;
+  }
+  button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #a8561c; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #count { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+  .hide-bar .bar { display: none; }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<video id="va" muted loop playsinline preload="auto"></video>
+<video id="vb" muted loop playsinline preload="auto"></video>
+
+<div class="bar">
+  <div class="title">Wallpaper transition preview</div>
+  <label for="a">A <select id="a"></select></label>
+  <label for="b">B <select id="b"></select></label>
+  <button id="now" type="button">Switch now</button>
+  <span id="count"></span>
+</div>
+
+<script>
+// The same flight as VideoWallpaper.exe. The camera accelerates right: the current wallpaper (still playing) glides
+// off to the left with a soft trailing edge while its own stars, picked out of the frame, stretch into streaks. The
+// streaks keep rushing past in the dark while the videos swap, thinning out, and are gone just as the next one
+// (already playing) glides in from the right and settles. Its name label flickers on last. Switches every 15 seconds.
+const VIDEOS = {
+  'Quasar': 'quasar-1920x1080-30s-60fps.mp4',
+  'Sagittarius A*': 'sagittarius-a-1920x1080-30s-60fps.mp4',
+  'TON 618': 'event-horizon-closeup-1920x1080-20s-60fps.mp4',
+  'Earth & Moon': 'earth-moon-1920x1080-30s-60fps.mp4',
+  'Saturn': 'saturn-1920x1080-30s-60fps.mp4',
+};
+const EVERY = 15, LEAVE = 1.6, CRUISE = 0.7, ARRIVE = 1.7, SETTLE = 1.2;
+
+const $ = id => document.getElementById(id);
+const canvas = $('screen'), ctx = canvas.getContext('2d');
+const vids = [$('va'), $('vb')];
+let active = 0, lastSwitch = performance.now(), flight = null, lastFrame = performance.now(), streaks = [], flightId = 0;
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+const hasLabel = v => /sagittarius|event-horizon|quasar/.test(v.src);
+// The neon-sign flicker: a few short blinks, a longer one, a dropout, then on for good
+const labelShowing = t => t > 1.0 || (t > 0.12 && t < 0.17) || (t > 0.3 && t < 0.34) || (t > 0.46 && t < 0.62) || (t > 0.72 && t < 0.9);
+// Hides the label by filling its strip with the live scene from just above it (72 px = 8 of the scenes' 9 px
+// tiles, so the pixel grid lines up), so the wallpaper never looks cut out while the label is off
+function coverLabel(ox) {
+  const W = canvas.width, H = canvas.height, k = H / 1080;
+  const l = Math.round(ox + W * 0.818 - 760 * k), t = Math.round(H - 64 * k), w = Math.round(792 * k), h = H - t;
+  ctx.drawImage(canvas, l, t - Math.round(72 * k), w, h, l, t, w, h);
+}
+
+for (const id of ['a', 'b']) for (const name of Object.keys(VIDEOS)) $(id).add(new Option(name, VIDEOS[name]));
+$('a').value = VIDEOS['Quasar']; $('b').value = VIDEOS['Sagittarius A*'];
+
+function load(i) {
+  const v = vids[i], src = $(i ? 'b' : 'a').value;
+  if (!v.src.endsWith(src)) { v.src = src; v.load(); }
+  if (i === active) v.play().catch(() => {});
+}
+$('a').addEventListener('change', () => load(0));
+$('b').addEventListener('change', () => load(1));
+load(0); load(1);
+
+canvas.width = 1920; canvas.height = 1080;      // the wallpapers' own size; CSS scales it to the window
+// Picks the stars out of a frame: bright points with dark sky all around them, one per small cell.
+// Runs in a worker (below) so the page never stalls while it looks.
+function findStars(frame) {
+  const W = frame.width, H = frame.height, c = new OffscreenCanvas(W, H).getContext('2d');
+  c.drawImage(frame, 0, 0); frame.close();
+  let px;
+  try { px = c.getImageData(0, 0, W, H).data; } catch { return []; }   // opened from file://: pixels unreadable
+  const k = H / 1080;
+  const ring = Math.max(4, Math.floor(7 * k)), diag = Math.floor(ring * 0.7), cell = Math.max(6, Math.floor(12 * k));
+  const labelX = W * 0.818 - 760 * k, labelY = H - 64 * k;
+  // Two rings around each point must be near-black sky, so lights on a planet's night side don't count
+  const rx = [ring, -ring, 0, 0, diag, diag, -diag, -diag], ry = [0, 0, ring, -ring, diag, -diag, diag, -diag];
+  const lum = (x, y) => { const i = (y * W + x) * 4; return Math.max(px[i], px[i + 1], px[i + 2]); };
+  // The sky's own brightness: the most common one in the frame
+  const hist = new Array(256).fill(0);
+  for (let y = 0; y < H; y += 4) for (let x = 0; x < W; x += 4) hist[lum(x, y)]++;
+  const sky = hist.indexOf(Math.max(...hist));
+  const best = new Map();
+  for (let y = ring * 2; y < H - ring * 2; y += 2) for (let x = ring * 2; x < W - ring * 2; x += 2) {
+    const l = lum(x, y);
+    if (l < 140 || (x > labelX && y > labelY)) continue;
+    const limit = Math.min(sky + 7, l * 0.3);
+    let alone = true;
+    for (let i = 0; i < 16 && alone; i++) { const m = 1 + (i >> 3); alone = lum(x + rx[i % 8] * m, y + ry[i % 8] * m) < limit; }
+    if (!alone) continue;
+    const key = Math.floor(y / cell) * (Math.floor(W / cell) + 1) + Math.floor(x / cell), had = best.get(key);
+    if (!had || had.l < l) best.set(key, { x, y, l });
+  }
+  const star = (x, y, r, g, b, l) => ({ x, y, r, g, b, bright: l / 255, thick: (l > 215 ? 2 : 1) * Math.max(1, Math.round(k)),
+    depth: 0.55 + Math.random() * 0.9, cut: Math.random() * 0.85 });
+  const found = [...best.values()].sort((a, b) => b.l - a.l).slice(0, 450).map(s => {
+    const i = (s.y * W + s.x) * 4, m = Math.max(1, s.l);
+    return star(s.x, s.y, px[i] * 255 / m, px[i + 1] * 255 / m, px[i + 2] * 255 / m, s.l);
+  });
+  // Copies of them waiting off to the right, so the dark stretch in the middle still has stars rushing past
+  const n = found.length, extra = n ? Math.max(160 - n, Math.floor(n / 3)) : 0;
+  for (let i = 0; i < extra; i++) {
+    const o = found[Math.floor(Math.random() * n)];
+    found.push(star(W + Math.random() * W, Math.random() * H, o.r, o.g, o.b, o.bright * 255));
+  }
+  return found;
+}
+const finder = new Worker(URL.createObjectURL(new Blob([findStars.toString(),
+  '\nonmessage = e => postMessage({ id: e.data.id, stars: findStars(e.data.frame) });'], { type: 'text/javascript' })));
+finder.onmessage = e => {
+  if (e.data.id !== flightId || !flight || flight.phase !== 'leave') return;
+  // Found in the frame where the scene started; move them along with it
+  const u = Math.min(1, (performance.now() - flight.start) / 1000 / LEAVE), moved = canvas.width * 1.35 * u * u * u;
+  streaks = e.data.stars;
+  for (const s of streaks) s.x -= moved;
+};
+
+// Moves the stars left by the camera's speed and draws each as a streak (bright head, fading tail), keeping the
+// brighter of streak and what is already there. Ones that leave on the left come back on the right somewhere else.
+// keep (1 down to 0) sets how many of them are still around.
+function drawStreaks(speed, dt, locked, keep) {
+  if (keep <= 0) return;
+  const W = canvas.width, H = canvas.height, k = H / 1080;
+  ctx.globalCompositeOperation = 'lighten';
+  for (const s of streaks) {
+    const v = speed * (1 + (s.depth - 1) * locked), len = Math.max(2 * k, v * 0.085);
+    s.x -= v * dt;
+    if (s.x + len < 0) { s.x = W + Math.random() * W * 0.4; s.y = Math.random() * H; }
+    const a = Math.max(0, Math.min(1, (keep - s.cut) / 0.15)) * s.bright;
+    if (a <= 0.01 || s.x > W) continue;
+    const g = ctx.createLinearGradient(s.x, 0, s.x + len, 0);
+    for (let i = 0; i <= 6; i++) {
+      const f = i / 6, m = a * Math.pow(1 - f, 1.6);
+      g.addColorStop(f, `rgb(${s.r * m | 0},${s.g * m | 0},${s.b * m | 0})`);
+    }
+    ctx.fillStyle = g;
+    ctx.fillRect(Math.floor(s.x), Math.floor(s.y), Math.ceil(len) + 1, s.thick);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// Draws a scene at horizontal offset ox, its leading (left) or trailing (right) edge fading into space
+function drawScene(v, ox, featherLeft, featherAlpha, hideLabel) {
+  const W = canvas.width, H = canvas.height, fw = W * 0.32;
+  ctx.drawImage(v, ox, 0, W, H);
+  if (hideLabel) coverLabel(ox);
+  if (featherAlpha <= 0) return;
+  const x0 = featherLeft ? ox : ox + W - fw, g = ctx.createLinearGradient(x0, 0, x0 + fw, 0);
+  for (let i = 0; i <= 8; i++) {
+    const u = i / 8, s = u * u * (3 - 2 * u);
+    g.addColorStop(u, `rgba(5,7,11,${featherAlpha * (featherLeft ? 1 - s : s)})`);
+  }
+  ctx.fillStyle = g; ctx.fillRect(x0, 0, fw, H);
+}
+
+function switchNow() {
+  if (flight) return;
+  streaks = [];
+  const id = ++flightId, v = vids[active];
+  if (v.readyState >= 2) createImageBitmap(v).then(frame => finder.postMessage({ id, frame }, [frame])).catch(() => {});
+  flight = { phase: 'leave', start: performance.now() };
+  lastSwitch = performance.now();
+}
+$('now').addEventListener('click', switchNow);
+
+function drawFlight(now, dt) {
+  const W = canvas.width, H = canvas.height;
+  let t = (now - flight.start) / 1000;
+  if (flight.phase === 'leave' && t >= LEAVE) {
+    // Out in open space: swap the videos where nobody can see
+    vids[active].pause();
+    active = 1 - active;
+    vids[active].currentTime = 0; vids[active].play().catch(() => {});
+    flight = { phase: 'cruise', start: now }; t = 0;
+  } else if (flight.phase === 'cruise' && t >= CRUISE && vids[active].readyState >= 2) {
+    flight = { phase: 'arrive', start: now }; t = 0;
+  } else if (flight.phase === 'arrive' && t >= ARRIVE) {
+    flight = hasLabel(vids[active]) ? { phase: 'settle', start: now } : null;
+    return false;
+  }
+  if (flight.phase === 'settle') return false;
+
+  const v = vids[active];
+  ctx.fillStyle = '#05070b';
+  ctx.fillRect(0, 0, W, H);
+  // The camera's speed: the scene leaves on an ease-in (the mirror of the arrival's ease-out), cruises, then brakes
+  const leaveTop = 1.35 * 3 / LEAVE * W, arriveTop = 1.35 * 3 / ARRIVE * W;
+  if (flight.phase === 'leave') {
+    // The scene glides off to the left unstretched; its stars, starting exactly where they are in it, stretch into
+    // streaks as the speed builds and drift apart by depth
+    const u = Math.min(1, t / LEAVE);
+    if (v.readyState >= 2) drawScene(v, -W * 1.35 * u * u * u, false, smooth(0, 0.2, u), false);
+    drawStreaks(leaveTop * u * u, dt, smooth(0.3, 1, u), 1);
+  } else if (flight.phase === 'cruise') {
+    // Open space while the videos swap: only streaks, starting to thin out
+    const c = Math.min(1, t / CRUISE);
+    drawStreaks(leaveTop + (arriveTop - leaveTop) * c, dt, 1, 1 - 0.25 * c);
+  } else {
+    // Arrive: the last streaks dissipate behind the next scene as it glides in from the right with a soft leading edge
+    const p = Math.min(1, t / ARRIVE), e = 1 - Math.pow(1 - p, 3);
+    drawStreaks(arriveTop * (1 - p) * (1 - p), dt, 1, 0.75 * (1 - smooth(0, 0.5, p)));
+    if (v.readyState >= 2) drawScene(v, W * 1.35 * (1 - e), true, 1 - smooth(0.72, 1, p), hasLabel(v));
+  }
+  return true;
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastFrame) / 1000); lastFrame = now;
+  const v = vids[active];
+  if (!(flight && drawFlight(now, dt)) && v.readyState >= 2) {
+    ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+    if (flight && flight.phase === 'settle') {
+      const t = (now - flight.start) / 1000;
+      if (!labelShowing(t)) coverLabel(0);
+      if (t >= SETTLE) flight = null;
+    }
+  }
+  const left = EVERY - (now - lastSwitch) / 1000;
+  if (left <= 0 && !flight) switchNow();
+  $('count').textContent = `Next switch in ${Math.max(0, Math.ceil(left))} s · press H to hide this bar`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+addEventListener('keydown', e => { if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('hide-bar'); });
+</script>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Earth and Moon</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
+<style>
+  :root {
+    --void: #05070b;
+    --panel: #0f1116;
+    --dust: #2f3540;
+    --ink: #e8eef5;
+    --muted: #8590a0;
+    --flare: #5aa7dc;
+    --font-display: "Silkscreen", "JetBrains Mono", ui-monospace, monospace;
+    --font-ui: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--void); color: var(--ink); font-family: var(--font-ui);
+    display: grid; grid-template-columns: 1fr 300px;
+  }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+  .stage { display: grid; place-items: center; padding: 24px; min-width: 0; min-height: 0; }
+  #preview { max-width: 100%; max-height: 100%; outline: 1px solid var(--dust); background: var(--void); }
+  aside {
+    background: var(--panel); border-left: 1px solid var(--dust);
+    padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;
+  }
+  h1 { font-family: var(--font-display); font-weight: 400; font-size: 1.1rem; margin: 0; letter-spacing: .05em; }
+  .sub { color: var(--muted); font-size: .75rem; margin: -8px 0 0; line-height: 1.5; }
+  label { display: grid; gap: 6px; font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  select, input[type=range] { width: 100%; }
+  select {
+    font: .8rem var(--font-ui); color: var(--ink); background: var(--void);
+    border: 1px solid var(--dust); padding: 7px 8px;
+  }
+  input[type=range] { accent-color: var(--flare); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    font: 600 .8rem/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase;
+    padding: 12px; cursor: pointer; border: 1px solid var(--flare);
+    background: var(--flare); color: var(--void);
+  }
+  button.ghost { background: transparent; color: var(--ink); border-color: var(--dust); }
+  button:disabled { opacity: .45; cursor: wait; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--flare); outline-offset: 2px; }
+  .bar { height: 8px; border: 1px solid var(--dust); }
+  .bar > div { height: 100%; width: 0; background: var(--flare); }
+  #status { font-size: .75rem; color: var(--muted); line-height: 1.5; min-height: 2.2em; }
+  #download { color: var(--flare); font-size: .8rem; word-break: break-all; }
+  .hint { font-size: .7rem; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--dust); padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="stage"><canvas id="preview"></canvas></div>
+
+<aside>
+  <h1>Earth &amp; Moon</h1>
+  <p class="sub">Earth turns under drifting clouds, and city lights come on as places cross into night. Satellite constellations, a Starlink train, the ISS and geostationary satellites circle it, going dark in Earth's shadow. The Moon passes in front, and shooting stars cross the sky now and then. The loop is seamless.</p>
+
+  <label for="res">Resolution
+    <select id="res">
+      <option value="1920x1080" selected>1920 × 1080 (your laptop)</option>
+      <option value="2560x1440">2560 × 1440</option>
+      <option value="3840x2160">3840 × 2160 (4K)</option>
+    </select>
+  </label>
+
+  <label for="grid">Pixel size
+    <select id="grid">
+      <option value="6">Fine</option>
+      <option value="9" selected>Medium</option>
+      <option value="12">Chunky</option>
+    </select>
+  </label>
+
+  <div class="row">
+    <label for="loop">Loop
+      <select id="loop">
+        <option value="20">20 s</option>
+        <option value="30" selected>30 s</option>
+        <option value="40">40 s</option>
+      </select>
+    </label>
+    <label for="fps">Frame rate
+      <select id="fps">
+        <option value="30">30 fps</option>
+        <option value="60" selected>60 fps</option>
+      </select>
+    </label>
+  </div>
+
+  <label for="turns">Earth spins per loop
+    <select id="turns">
+      <option value="1" selected>1</option>
+      <option value="2">2</option>
+    </select>
+  </label>
+  <label for="zoom">Zoom
+    <input id="zoom" type="range" min="60" max="160" value="100">
+  </label>
+  <label for="posx">Earth position
+    <input id="posx" type="range" min="30" max="80" value="60">
+  </label>
+  <label for="orbit">Moon distance
+    <input id="orbit" type="range" min="16" max="34" value="24">
+  </label>
+
+  <button id="export" type="button">Export MP4</button>
+  <button id="pause" type="button" class="ghost">Pause preview</button>
+  <div class="bar"><div id="progress"></div></div>
+  <div id="status">Ready.</div>
+  <a id="download" hidden></a>
+
+  <p class="hint">The default export matches your 1920 × 1080 screen. Exported MP4s in Downloads show up in the video wallpaper's tray menu by themselves. Export needs Chrome or Edge.</p>
+</aside>
+
+<script>
+// ---------- Renderer ----------
+const OCEAN = ['#05102a', '#0a2550', '#103a7a', '#1a56a8', '#2674cc', '#3b93e3', '#6db6f2'];
+const LAND = ['#0a1a0c', '#17361b', '#255a24', '#3b7d2c', '#5a9e36', '#86bd4c', '#b5d97a'];
+const SAND = ['#1c140a', '#3a2b15', '#5e4825', '#8c6c36', '#bb904c', '#dcb46a', '#f2d79c'];
+const ICE = ['#1a2230', '#3a4658', '#66758a', '#97a6b8', '#c4d0dd', '#e9f0f7', '#ffffff'];
+const CLOUD = ['#151c26', '#2f3a48', '#566474', '#8495a6', '#b4c2cf', '#dbe4ec', '#f7fbff'];
+const MOONC = ['#121216', '#25252b', '#3c3c44', '#5a5a63', '#7f7f88', '#a8a8b0', '#d2d2d8', '#f4f4f6'];
+const BLOOD = ['#1a0806', '#33100a', '#4d1a0f', '#6b2614'];
+const ATMO = ['#0f2a5c', '#1b4b9a', '#3a7bd6', '#79b4f2'];
+const CITY = ['#ffcf6b', '#ffa63d'];
+const STARS = ['#4f5866', '#8a95a6', '#f2f6fc', '#ffeec2'];
+const GLINT = '#e8f4ff';
+const BIG = ['#bcd4ff', '#fff4dc', '#ffc58f'];
+const TAU = Math.PI * 2;
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const pick = (pal, v) => pal[clamp(Math.floor(v * pal.length), 0, pal.length - 1)];
+
+function mulberry(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+function h3(x, y, z) {
+  let h = Math.imul(x, 0x8da6b343) ^ Math.imul(y, 0xd8163841) ^ Math.imul(z, 0xcb1ab31f);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+}
+function noise3(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  let fx = x - xi, fy = y - yi, fz = z - zi;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
+  const l = (a, b, k) => a + (b - a) * k;
+  return l(
+    l(l(h3(xi, yi, zi), h3(xi + 1, yi, zi), fx), l(h3(xi, yi + 1, zi), h3(xi + 1, yi + 1, zi), fx), fy),
+    l(l(h3(xi, yi, zi + 1), h3(xi + 1, yi, zi + 1), fx), l(h3(xi, yi + 1, zi + 1), h3(xi + 1, yi + 1, zi + 1), fx), fy), fz);
+}
+function fbm3(x, y, z, oct) {
+  let s = 0, a = 0.5, norm = 0;
+  for (let o = 0; o < oct; o++) { s += a * noise3(x, y, z); norm += a; x = x * 2.03 + 17; y *= 2.03; z = z * 2.03 + 5; a *= 0.5; }
+  return s / norm;
+}
+
+// Cell size is set in 1080p pixels and scaled, so preview and export look identical
+function makeScene(W, H, opts) {
+  const cell = Math.max(2, Math.round(opts.grid * H / 1080));
+  const cols = Math.ceil(W / cell), rows = Math.ceil(H / cell);
+  const rand = mulberry(1969);
+  const n = cols * rows;
+  const rnd = new Float32Array(n);
+  for (let i = 0; i < n; i++) rnd[i] = rand();
+
+  // Satellites. Orbit sizes are exaggerated so they read at this scale; k = orbits per loop
+  const sr = mulberry(808), sats = [];
+  for (let p = 0; p < 7; p++) {                                            // low Earth orbit shells
+    const node = sr() * TAU, inc = 0.35 + sr() * 0.9, r = 1.16 + sr() * 0.14, k = 3 + (sr() * 2 | 0), u = sr() * TAU;
+    for (let j = 0; j < 7; j++) sats.push({ r, node, inc, k, u0: u + j * TAU / 7, size: 0.5, c: '#e3ecf7' });
+  }
+  for (let j = 0; j < 14; j++) sats.push({ r: 1.12, node: 1.1, inc: 0.93, k: 4, u0: 2 - j * 0.035, size: 0.44, c: '#f6f9ff' });  // a Starlink train
+  for (let p = 0; p < 3; p++) for (let j = 0; j < 4; j++)                 // GPS
+    sats.push({ r: 1.75, node: p * TAU / 3, inc: 0.96, k: 2, u0: j * TAU / 4 + p, size: 0.48, c: '#bcd3ff' });
+  for (let j = 0; j < 9; j++)                                             // geostationary: turn with Earth, over the equator
+    sats.push({ r: 2.05, node: 0, inc: 0, k: opts.turns, u0: j * TAU / 9 + 0.3, size: 0.46, c: '#ffe2a6' });
+  sats.push({ r: 1.1, node: 2.4, inc: 0.9, k: 5, u0: 0.5, size: 0.85, c: '#fff3c4', iss: true });
+
+  // Shooting stars, spread through the loop and finished before it wraps
+  const mr = mulberry(99), meteors = [];
+  for (let j = 0; j < 7; j++) meteors.push({ t0: (j + mr() * 0.5) * opts.loop / 7, dur: 0.6 + mr() * 0.4,
+    x: 0.1 + mr() * 0.9, y: mr() * 0.55, ang: 2.3 + mr() * 0.6, len: 0.1 + mr() * 0.12 });
+
+  return { W, H, cell, cols, rows, rnd, opts, sats, meteors, over: [], strail: new Float32Array(n),
+    col: new Array(n).fill(null), kind: new Uint8Array(n), size: new Float32Array(n) };
+}
+
+const cyc = (radPerSec, T) => Math.max(1, Math.round(radPerSec * T / TAU));
+
+function step(sc, t, dt) {
+  const { cols, rows, rnd, col, kind, size, opts, strail } = sc;
+  const sdecay = Math.pow(0.93, dt * 60);
+  for (let i = 0; i < strail.length; i++) strail[i] *= sdecay;
+  const T = opts.loop, th = TAU * (((t % T) + T) % T) / T;
+  const R = rows * 0.34 * opts.zoom;
+  const cx = cols * opts.posx, cy = rows * 0.56;
+  // Sunlight from the upper left, slightly in front
+  let lx = -0.8, ly = -0.25, lz = 0.55;
+  const ll = Math.hypot(lx, ly, lz); lx /= ll; ly /= ll; lz /= ll;
+  let hx = lx, hy = ly, hz = lz + 1;                         // halfway vector for the ocean glint
+  const hl = Math.hypot(hx, hy, hz); hx /= hl; hy /= hl; hz /= hl;
+  const tiltA = -23.4 * Math.PI / 180, tc = Math.cos(tiltA), ts = Math.sin(tiltA);
+  const pc = Math.cos(0.3), ps = Math.sin(0.3);              // north pole leans toward us a little
+  const spin = opts.turns * th, sc0 = Math.cos(spin), ss0 = Math.sin(spin);
+  const cdx = 0.35 * Math.cos(th), cdz = 0.35 * Math.sin(th); // clouds drift and change shape over the loop
+  const kStar = cyc(1.5, T);
+
+  // The Moon: one pass per loop on an inclined orbit; in front when mz > 0
+  const A = opts.orbit, psi = th + 2.2, inc = 0.2, oroll = -10 * Math.PI / 180;
+  const ox = A * Math.cos(psi), oy = A * Math.sin(psi) * Math.sin(inc), mz = A * Math.sin(psi) * Math.cos(inc);
+  const mx = ox * Math.cos(oroll) - oy * Math.sin(oroll), my = ox * Math.sin(oroll) + oy * Math.cos(oroll);
+  const rm = 0.3 * (1 + 0.12 * mz / A);
+  const mc = Math.cos(psi), ms = Math.sin(psi);                // tidally locked: the same face always looks at Earth
+
+  for (let py = 0; py < rows; py++) {
+    const Y = (py + 0.5 - cy) / R;
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px, n = rnd[i];
+      const X = (px + 0.5 - cx) / R;
+      const r2 = X * X + Y * Y, r = Math.sqrt(r2);
+      let c = null, k = 0, s = 1;
+
+      const dmx = X - mx, dmy = Y - my, dm2 = dmx * dmx + dmy * dmy;
+      const onMoon = dm2 < rm * rm && (mz > 0 || r > 1.06);
+
+      if (onMoon) {
+        const qx = dmx / rm, qy = dmy / rm, qz = Math.sqrt(Math.max(0, 1 - qx * qx - qy * qy));
+        const lam = qx * lx + qy * ly + qz * lz;
+        // Earth's shadow on the Moon turns it red
+        const Qx = mx + qx * rm, Qy = my + qy * rm, Qz = mz + qz * rm;
+        const b = Qx * lx + Qy * ly + Qz * lz, cc = Qx * Qx + Qy * Qy + Qz * Qz - 1;
+        const eclipsed = b < 0 && b * b - cc > 0;
+        const ux = qx * mc + qz * ms, uz = -qx * ms + qz * mc;
+        const maria = fbm3(ux * 2.2 + 40, qy * 2.2, uz * 2.2, 4);
+        const crater = fbm3(ux * 7 + 9, qy * 7, uz * 7, 2);
+        let v = (0.04 + 0.96 * Math.max(0, lam)) * (maria < 0.47 ? 0.62 : 1) * (crater > 0.66 ? 0.72 : 1);
+        v = Math.max(v, 0.06);                                 // earthshine
+        c = eclipsed ? pick(BLOOD, v * 1.4) : MOONC[clamp(Math.floor(v * 7.6 + (n - 0.5) * 0.6), 0, 7)];
+      } else if (r < 1) {
+        const z = Math.sqrt(1 - r2);
+        let lam = X * lx + Y * ly + z * lz;
+        // The Moon's shadow on Earth
+        const vx = mx - X, vy = my - Y, vz = mz - z, tt = vx * lx + vy * ly + vz * lz;
+        if (mz > -0.3 && tt > 0) {
+          const d2 = vx * vx + vy * vy + vz * vz - tt * tt;
+          if (d2 < rm * rm * 0.55) lam = Math.min(lam, -0.02);
+          else if (d2 < rm * rm * 1.6) lam *= 0.45;
+        }
+        // Into Earth's own frame: undo the axial tilt, lean the pole toward us, then spin
+        const x1 = X * tc + Y * ts, y1 = -X * ts + Y * tc;
+        const y2 = y1 * pc - z * ps, z2 = y1 * ps + z * pc;
+        const bx = x1 * sc0 + z2 * ss0, by = y2, bz = -x1 * ss0 + z2 * sc0;
+        const lat = -by;
+
+        const hgt = fbm3(bx * 1.6 + 3, by * 1.6, bz * 1.6, 5);
+        const land = hgt > 0.53;
+        const ice = Math.abs(lat) > 0.96 || (Math.abs(lat) > 0.9 && hgt > 0.5);
+        const cloudN = fbm3(bx * 2.2 + cdx, by * 4.2, bz * 2.2 + cdz, 4);
+        const cloud = cloudN > 0.57;
+
+        if (lam > 0) {
+          const lit = Math.min(1, 0.22 + 0.95 * Math.pow(lam, 0.6));
+          if (cloud) c = pick(CLOUD, lit * (cloudN > 0.63 ? 1.05 : 0.8));
+          else if (ice) c = pick(ICE, lit);
+          else if (land) {
+            const dry = fbm3(bx * 3 + 20, by * 3, bz * 3, 3);
+            const desert = Math.abs(lat) > 0.12 && Math.abs(lat) < 0.5 && dry < 0.47;
+            c = pick(desert ? SAND : LAND, lit * (hgt > 0.62 ? 0.8 : 1));
+          } else {
+            const spec = Math.pow(Math.max(0, X * hx + Y * hy + z * hz), 70);
+            c = spec > 0.5 ? GLINT : pick(OCEAN, lit * (0.85 + 0.25 * smooth(0.45, 0.53, hgt)));
+          }
+          // Thin blue haze at the edge of the day side
+          if (z < 0.28 && n < (0.28 - z) * 3) c = pick(ATMO, 0.5 + lam);
+        } else {
+          // Night: dark ground, with city lights stuck to the land as it turns
+          c = cloud ? CLOUD[0] : land || ice ? LAND[0] : OCEAN[0];
+          if (land && !ice && !cloud && lam < -0.04
+              && h3(Math.floor(bx * 38) + 99, Math.floor(by * 38), Math.floor(bz * 38)) > 0.86) {
+            c = CITY[n < 0.5 ? 0 : 1]; k = 1; s = 0.5 + 0.3 * n;
+          }
+        }
+      } else if (r < 1.07) {
+        // Atmosphere rim, brightest toward the Sun
+        const g = (X * lx + Y * ly) / r + 0.35;
+        if (g > 0) { c = pick(ATMO, g * (1 - (r - 1) / 0.07)); k = g > 0.7 ? 0 : 1; s = 0.7; }
+      } else {
+        if (n > 0.9944) {
+          const tw = 0.5 + 0.5 * Math.sin(kStar * th + i * 1.7);
+          c = n > 0.9988 ? STARS[3] : STARS[2]; k = 1; s = 0.45 + 0.4 * tw;
+          if (n > 0.9993) { c = BIG[i % 3]; k = tw > 0.35 ? 0 : 1; s = 0.8; }   // a few big coloured stars
+        } else if (n > 0.975 && n < 0.9782) { c = STARS[1]; k = 2; s = 0.45; }
+      }
+      col[i] = c; kind[i] = k; size[i] = s;
+    }
+  }
+
+  // Satellites: hidden behind Earth or the Moon, dim while in Earth's shadow. Drawn on top of the tiles
+  const over = sc.over; over.length = 0;
+  for (const st of sc.sats) {
+    const u = st.u0 + st.k * th, cu = Math.cos(u), su = Math.sin(u);
+    const cn = Math.cos(st.node), sn = Math.sin(st.node), ci = Math.cos(st.inc), si = Math.sin(st.inc);
+    const x1 = st.r * (cn * cu - sn * ci * su), y2 = -st.r * si * su, z2 = st.r * (sn * cu + cn * ci * su);
+    const y1 = y2 * pc + z2 * ps, z = -y2 * ps + z2 * pc;
+    const X = x1 * tc - y1 * ts, Y = x1 * ts + y1 * tc;
+    if (z < 0 && X * X + Y * Y < 1) continue;
+    if (z < mz && (X - mx) ** 2 + (Y - my) ** 2 < rm * rm) continue;
+    const b = X * lx + Y * ly + z * lz, dark = b < 0 && b * b - (X * X + Y * Y + z * z - 1) > 0;
+    const px = Math.floor(cx + X * R), py = Math.floor(cy + Y * R);
+    if (px < 0 || px >= cols || py < 0 || py >= rows) continue;
+    over.push(dark ? { px, py, c: '#46536a', s: 0.36 } : { px, py, c: st.c, s: st.size });
+    if (!dark) strail[py * cols + px] = 1;
+  }
+
+  // Shooting stars streak across the sky, never over Earth or the Moon
+  const tl = ((t % T) + T) % T;
+  for (const m of sc.meteors) {
+    const p = (tl - m.t0) / m.dur;
+    if (p < 0 || p > 1) continue;
+    const dx = Math.cos(m.ang), dy = Math.sin(m.ang), fade = Math.sin(Math.PI * p);
+    const hx = m.x * cols + dx * m.len * cols * p, hy = m.y * rows + dy * m.len * cols * p;
+    const tail = 14;
+    for (let j = 0; j < tail; j += 0.5) {
+      const px = Math.floor(hx - dx * j), py = Math.floor(hy - dy * j);
+      if (px < 0 || px >= cols || py < 0 || py >= rows) continue;
+      const X = (px + 0.5 - cx) / R, Y = (py + 0.5 - cy) / R;
+      if (X * X + Y * Y < 1.2 || (X - mx) ** 2 + (Y - my) ** 2 < rm * rm * 1.3) continue;
+      const v = fade * (1 - j / tail);
+      if (v < 0.08) continue;
+      over.push({ px, py, c: v > 0.6 ? '#ffffff' : v > 0.3 ? '#cfe2ff' : '#7f9fd0', s: 0.25 + 0.65 * v });
+    }
+  }
+}
+
+function paint(sc, ctx) {
+  const { cols, rows, col, kind, size, cell: s, W, H } = sc;
+  ctx.fillStyle = '#05070b';
+  ctx.fillRect(0, 0, W, H);
+  const gap = Math.max(1, Math.round(s * 0.12)), bevel = Math.max(1, Math.round(s * 0.1));
+  const inner = s - 2 * gap;
+  ctx.lineWidth = Math.max(1, Math.round(s * 0.1));
+
+  for (let py = 0; py < rows; py++) {
+    for (let px = 0; px < cols; px++) {
+      const i = py * cols + px, c = col[i];
+      if (!c) continue;
+      const x = px * s, y = py * s, k = kind[i];
+      if (k === 0) {
+        ctx.fillStyle = c;
+        ctx.fillRect(x + gap, y + gap, inner, inner);
+        if (s >= 6) {
+          ctx.strokeStyle = 'rgba(5,7,11,0.38)';
+          ctx.strokeRect(x + gap + 1.5 * bevel, y + gap + 1.5 * bevel, inner - 3 * bevel, inner - 3 * bevel);
+        }
+      } else {
+        const sz = Math.max(2, inner * size[i]);
+        if (k === 1) { ctx.fillStyle = c; ctx.fillRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz); }
+        else { ctx.strokeStyle = c; ctx.strokeRect(x + (s - sz) / 2, y + (s - sz) / 2, sz, sz); }
+      }
+    }
+  }
+  // Fading orbit trails behind the satellites
+  const st = sc.strail;
+  for (let i = 0; i < st.length; i++) {
+    const tr = st[i];
+    if (tr < 0.08) continue;
+    const sz = Math.max(2, inner * (0.2 + 0.3 * tr));
+    ctx.fillStyle = `rgba(170,212,255,${(0.3 + 0.65 * tr).toFixed(2)})`;
+    ctx.fillRect((i % cols) * s + (s - sz) / 2, Math.floor(i / cols) * s + (s - sz) / 2, sz, sz);
+  }
+  // Satellites and meteors, each with a dark outline so they read against bright clouds
+  const edge = Math.max(1, Math.round(s * 0.12));
+  for (const o of sc.over) {
+    const sz = Math.max(2, inner * Math.min(1, o.s * 1.2));
+    const x = o.px * s + (s - sz) / 2, y = o.py * s + (s - sz) / 2;
+    ctx.fillStyle = '#05070b';
+    ctx.fillRect(x - edge, y - edge, sz + 2 * edge, sz + 2 * edge);
+    ctx.fillStyle = o.c;
+    ctx.fillRect(x, y, sz, sz);
+  }
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const preview = $('preview'), pctx = preview.getContext('2d');
+let scene = null, t = 0, last = performance.now(), paused = false, exporting = false;
+
+function opts() {
+  return {
+    grid: +$('grid').value, loop: +$('loop').value, turns: +$('turns').value,
+    zoom: +$('zoom').value / 100, posx: +$('posx').value / 100, orbit: +$('orbit').value / 10,
+  };
+}
+function dims() { const [w, h] = $('res').value.split('x').map(Number); return { w, h }; }
+
+function rebuildPreview() {
+  const { w, h } = dims();
+  const k = Math.min(1, 1280 / w);
+  preview.width = Math.round(w * k); preview.height = Math.round(h * k);
+  scene = makeScene(preview.width, preview.height, opts());
+}
+for (const id of ['res', 'grid', 'loop', 'turns', 'zoom', 'posx', 'orbit']) $(id).addEventListener('input', rebuildPreview);
+
+$('pause').addEventListener('click', () => {
+  paused = !paused;
+  $('pause').textContent = paused ? 'Play preview' : 'Pause preview';
+});
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!paused && !exporting) { t += dt; step(scene, t, dt); paint(scene, pctx); }
+  requestAnimationFrame(loop);
+}
+
+// ---------- MP4 export (WebCodecs + mp4-muxer) ----------
+async function pickCodec(w, h, fps, bitrate) {
+  for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.640034', 'avc1.42003e']) {
+    const cfg = { codec, width: w, height: h, bitrate, framerate: fps };
+    try { const r = await VideoEncoder.isConfigSupported(cfg); if (r.supported) return cfg; } catch {}
+  }
+  return null;
+}
+
+$('export').addEventListener('click', async () => {
+  if (!('VideoEncoder' in window)) { $('status').textContent = 'This browser has no WebCodecs. Open the file in Chrome or Edge.'; return; }
+  if (!window.Mp4Muxer) { $('status').textContent = 'The MP4 library did not load. Check your internet connection and reload.'; return; }
+
+  const { w, h } = dims(), o = opts(), fps = +$('fps').value;
+  const total = o.loop * fps;
+  const bitrate = Math.round(w * h * fps * 0.2);
+  const cfg = await pickCodec(w, h, fps, bitrate);
+  if (!cfg) { $('status').textContent = `Your browser cannot encode H.264 at ${w}×${h}. Try a smaller resolution.`; return; }
+
+  exporting = true;
+  $('export').disabled = true; $('download').hidden = true;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const sc = makeScene(w, h, o);
+
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: 'avc', width: w, height: h, frameRate: fps },
+    fastStart: 'in-memory',
+  });
+  let failed = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { failed = e; } });
+  enc.configure(cfg);
+
+  try {
+    // Run the end of the loop first so the satellite trails at frame 0 match the last frame
+    const dt = 1 / fps;
+    for (let f = Math.ceil(fps * 2); f > 0; f--) step(sc, o.loop - f * dt, dt);
+
+    const start = performance.now();
+    for (let f = 0; f < total; f++) {
+      if (failed) throw failed;
+      step(sc, f * dt, dt);
+      paint(sc, ctx);
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(f * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+      frame.close();
+      while (enc.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 1));
+      if (f % 5 === 0) {
+        $('progress').style.width = `${(100 * f / total).toFixed(1)}%`;
+        const eta = (performance.now() - start) / (f + 1) * (total - f) / 1000;
+        $('status').textContent = `Rendering frame ${f + 1} of ${total} · about ${Math.ceil(eta)} s left`;
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    await enc.flush();
+    if (failed) throw failed;
+    muxer.finalize();
+
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    const name = `earth-moon-${w}x${h}-${o.loop}s-${fps}fps.mp4`;
+    const a = $('download');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    a.textContent = `Save ${name} again (${(blob.size / 1e6).toFixed(1)} MB)`;
+    a.hidden = false; a.click();
+    $('progress').style.width = '100%';
+    $('status').textContent = 'Done. The MP4 is in your Downloads folder.';
+  } catch (e) {
+    $('status').textContent = `Export failed: ${e.message || e}. Try 30 fps or a lower resolution.`;
+  } finally {
+    try { enc.close(); } catch {}
+    exporting = false; $('export').disabled = false;
+  }
+});
+
+rebuildPreview();
+requestAnimationFrame(n => { last = n; loop(n); });
+</script>
+</body>
+</html>
