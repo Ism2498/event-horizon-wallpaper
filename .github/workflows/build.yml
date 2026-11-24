@@ -1,0 +1,44 @@
+name: Build Windows Engine
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile VideoWallpaper.exe with Windows csc.exe
+        shell: pwsh
+        run: |
+          .\video-wallpaper.ps1 -BuildOnly
+          $size = (Get-Item .\VideoWallpaper.exe).Length
+          Write-Host "Compiled VideoWallpaper.exe ($size bytes)"
+
+      - name: Package portable app bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item VideoWallpaper.exe, VideoWallpaper.ico, Silkscreen-Regular.ttf, Silkscreen-Bold.ttf, Silkscreen-OFL.txt, video-wallpaper.ps1, "Start Video Wallpaper.cmd", README.md, LICENSE dist/
+          Compress-Archive -Path dist/* -DestinationPath EventHorizonWallpaper-win-x64.zip -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EventHorizonWallpaper-win-x64
+          path: EventHorizonWallpaper-win-x64.zip
+
+      - name: Attach to GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: EventHorizonWallpaper-win-x64.zip
